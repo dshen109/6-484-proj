@@ -41,7 +41,7 @@ class NsrdbReader:
     dirnorrad_col = 'DNI'  # Direct Normal Irradiation
     difhorrad_col = 'DHI'  # Diffused Horizontal Irradiance
 
-    def __init__(self, fname, tz='America/Chicago'):
+    def __init__(self, fname, tz='US/Central', final_tz='America/Chicago'):
         self.filename = fname
         frame = pd.read_csv(self.filename, skiprows=2)
         frame.index = (
@@ -54,7 +54,13 @@ class NsrdbReader:
             pd.to_timedelta(frame['Minute'], 'T')
         )
         timezone = pytz.timezone(tz)
-        frame.index = frame.index.tz_localize(timezone, ambiguous='infer')
+        # Assume no DST accounted for in NSRDB data.
+        offset = timezone.utcoffset(frame.index[0])
+
+        # Convert to utc
+        utc = (frame.index - offset).tz_localize(pytz.utc)
+        frame.index = utc.tz_convert(pytz.timezone(final_tz))
+
         frame.drop(columns=['Year', 'Month', 'Day', 'Hour', 'Minute',
                             'Unnamed: 12'],
                    inplace=True)
@@ -65,9 +71,10 @@ class NsrdbReader:
             self.weather.index[1] - self.weather.index[0]
         ).total_seconds() / 3600
         self.weather_hourly = self.weather.resample('1H').mean()
-        for col in [self.dirnorrad_col, self.dirnorrad_col]:
+        hourly_sums = self.weather.resample('1H').sum()
+        for col in [self.dirnorrad_col, self.difhorrad_col]:
             self.weather_hourly[col + '_Whm2'] = \
-                self.weather.resample('1H').sum() * timedelta
+                hourly_sums[col] * timedelta
 
 
 def hour_of_year(timestamp):
@@ -87,4 +94,8 @@ def sun_position(latitude, longitude, timestamp):
     :param float longitude:
     :param Timestamp timestamp: tz-aware timestamp.
     """
+    # Convert to pydatetime because otherwise we get a TypeError with pandas
+    # timestamps
+    if isinstance(timestamp, pd.Timestamp):
+        timestamp = timestamp.to_pydatetime()
     return get_position(latitude, longitude, timestamp)
