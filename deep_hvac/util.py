@@ -1,8 +1,8 @@
 import datetime
-import math
 
 import pandas as pd
 from pysolar.solar import get_position
+import pytz
 
 
 class ErcotPriceReader:
