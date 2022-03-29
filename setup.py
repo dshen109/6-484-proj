@@ -8,8 +8,9 @@ setup(
     packages=find_packages(),
     python_requires='>=3.8',
     install_requires=[
+        'openpyxl',
         'pandas',
-        'openpyxl'
+        'pysolar'
         ],
     extras_require={
         'test': ['pytest', 'mock'],
