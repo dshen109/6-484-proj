@@ -17,7 +17,7 @@ hvac_dir = os.path.join(
         '..', 'deep_hvac'
     )
 sys.path.insert(2, hvac_dir)
-from util import NsrdbReader
+from util import NsrdbReader, ErcotPriceReader
 from simulator import SimEnv
 
 if __name__ == "__main__":
@@ -26,9 +26,9 @@ if __name__ == "__main__":
         '..', 'data'
     )
     nsrdb = NsrdbReader(os.path.join(datadir, '1704559_29.72_-95.35_2018.csv'))
-    # ercot = ErcotPriceReader(os.path.join(
-    #     datadir, 'ercot-2018-rt.xlsx'
-    # ))
+    ercot = ErcotPriceReader(os.path.join(
+        datadir, 'ercot-2018-rt.xlsx'
+    ))
 
     window_area = 1
     office = Zone(window_area=window_area)
@@ -36,7 +36,7 @@ if __name__ == "__main__":
 
     latitude, longitude = 29.749907, -95.358421
 
-    env = SimEnv(prices=pd.DataFrame([]), 
+    env = SimEnv(prices=ercot.prices, 
                  weather=nsrdb.weather_hourly, 
                  agent=None,
                  coords=[latitude, longitude],
@@ -44,9 +44,6 @@ if __name__ == "__main__":
                  windows=[south_window])
 
     for _ in range(600):
-        env.step(1)
+        env.step([0, 0])
 
     env.plot_results()
-    
-
-      

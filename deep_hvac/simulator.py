@@ -44,6 +44,13 @@ class SimEnv(Env):
         return self.t_m_prev
 
     def step(self, action):
+        """
+        :param Array of size two to determine change in heating and cooling temperature respectively
+        """
+
+        self.zone.t_set_heating += action[0]
+        self.zone.t_set_cooling += action[1]
+
         row = self.weather.reset_index().iloc[self.time]
         timestamp, cur_weather = row[0], row[1:]
         
@@ -71,10 +78,25 @@ class SimEnv(Env):
             self.results[attr].append(getattr(self.zone, attr))
         self.results['t_out'].append(t_out)
         self.results['solar_gain'].append(sum([window.solar_gains for window in self.windows]))
+        
+        # Calculate all electricity consumed and price
+        price = self.get_avg_hourly_price()
+        elec_consumed = self.zone.heating_energy + self.zone.cooling_energy
+        self.results['electricity_consumed'].append(elec_consumed)
+        self.results['price'].append(elec_consumed * price)
 
         self.time += 1
+
+        return self.zone.t_air, price
 
     def plot_results(self, attr='t_air'):
         annual_results = pd.DataFrame(self.results)
         annual_results[[attr]].plot()
         plt.show()
+
+    def get_avg_hourly_price(self):
+        '''
+        Calculates the average price of electricity for the current hour
+        '''
+        hour_prices = self.prices['Settlement Point Price'][self.time*4: self.time*4 + 4]
+        return sum(hour_prices)/4
