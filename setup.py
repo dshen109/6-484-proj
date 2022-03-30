@@ -8,9 +8,12 @@ setup(
     packages=find_packages(),
     python_requires='>=3.8',
     install_requires=[
+        'gym',
         'openpyxl',
         'pandas',
-        'pysolar'
+        'pysolar',
+        'tensorboard',
+        'torch'
         ],
     extras_require={
         'test': ['pytest', 'mock'],
