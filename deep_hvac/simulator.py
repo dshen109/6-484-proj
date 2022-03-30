@@ -21,6 +21,7 @@ class SimEnv(Env):
         """
         super(SimEnv, self).__init__()
 
+        #TODO: include band settings in observation
         inf = float('inf')
         self.observation_space = spaces.Box(low = np.array([-inf, -inf, -inf, -inf]),
                                             high = np.array([inf, inf, inf, inf]),
@@ -91,7 +92,7 @@ class SimEnv(Env):
         self.results['t_out'].append(t_out)
         self.results['solar_gain'].append(sum([window.solar_gains for window in self.windows]))
         
-        # Calculate all electricity consumed and price
+        # Calculate all electricity consumed and pcdrice
         price = self.get_avg_hourly_price()
         elec_consumed = self.zone.heating_energy + self.zone.cooling_energy
         self.results['electricity_consumed'].append(elec_consumed)
@@ -102,7 +103,8 @@ class SimEnv(Env):
         if self.time >= 8760:
             self.time = 0
 
-        self.cur_state = [t_out, self.t_m_prev, self.time % 24, int(self.time/24) % 7]
+        #TODO: change time in observation to utilize data from timestamps
+        self.cur_state = [t_out, getattr(self.zone, 't_air'), self.time % 24, int(self.time/24) % 7]
         reward, info = self.get_reward(self.t_m_prev, t_out)
         self.ep_reward += reward
         self.timestep += 1
