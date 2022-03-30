@@ -17,14 +17,14 @@ from torch import nn
 from pathlib import Path
 import gym
 
-def train_ppo(env_name='DefaultBuilding-v0', max_steps=100000):    
+def train_ppo(env_name='DefaultBuilding-v0', max_steps=100000):
     set_config('ppo')
     cfg.alg.num_envs = 1
 
     cfg.alg.episode_steps = 1024
     cfg.alg.log_interval = 1
     cfg.alg.eval_interval = 20
-    
+
     cfg.alg.max_steps = max_steps
     cfg.alg.device = 'cuda' if torch.cuda.is_available() else 'cpu'
     cfg.alg.env_name = env_name
@@ -53,16 +53,16 @@ def train_ppo(env_name='DefaultBuilding-v0', max_steps=100000):
                      output_act=nn.Tanh)
 
     critic_body = MLP(input_size=ob_size,
-                     hidden_sizes=[64, 64],
-                     output_size=64,
-                     hidden_act=nn.Tanh,
-                     output_act=nn.Tanh)
-    
+                      hidden_sizes=[64, 64],
+                      output_size=64,
+                      hidden_act=nn.Tanh,
+                      output_act=nn.Tanh)
+
     if isinstance(env.action_space, gym.spaces.Discrete):
         act_size = env.action_space.n
         actor = CategoricalPolicy(actor_body,
-                                 in_features=64,
-                                 action_dim=act_size)
+                                  in_features=64,
+                                  action_dim=act_size)
     elif isinstance(env.action_space, gym.spaces.Box):
         act_size = env.action_space.shape[0]
         actor = DiagGaussianPolicy(actor_body,
