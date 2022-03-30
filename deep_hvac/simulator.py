@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 from collections import defaultdict
 
 from util import sun_position
+import random
 
 class SimEnv(Env):
     """Simulation environment"""
@@ -19,6 +20,8 @@ class SimEnv(Env):
         """
         super(SimEnv, self).__init__()
 
+        self.observation_space = 4
+
         self.prices = prices
         self.weather = weather
         self.agent = agent
@@ -29,19 +32,21 @@ class SimEnv(Env):
         self.reset()
 
     def reset(self):
-        # reset time to beginning of the year
-        self.time = 0
+        # reset time to a random time in the year 
+        self.time = random.randint(0, 8760)
         
         # set episode return to 0
         self.ep_reward = 0
 
         # reset the temperature of the building mass
-        self.t_m_prev = 20
+        self.t_m_prev = random.randint(15, 25)
+        timestamp, cur_weather = self.get_timestamp_and_weather()
+        self.cur_state = [cur_weather['Temperature'], self.t_m_prev, self.time%24, int(self.time/24)%7]
 
         # reset the episodes results
         self.results = defaultdict(list)
 
-        return self.t_m_prev
+        return self.cur_state
 
     def step(self, action):
         """
@@ -51,8 +56,7 @@ class SimEnv(Env):
         self.zone.t_set_heating += action[0]
         self.zone.t_set_cooling += action[1]
 
-        row = self.weather.reset_index().iloc[self.time]
-        timestamp, cur_weather = row[0], row[1:]
+        timestamp, cur_weather = self.get_timestamp_and_weather()
         
         altitude, azimuth = sun_position(self.latitude, self.longitude, timestamp)
         
@@ -86,13 +90,22 @@ class SimEnv(Env):
         self.results['price'].append(elec_consumed * price)
 
         self.time += 1
+        #allow for a rollover into january from December
+        if self.time >= 8760:
+            self.time = 0
 
-        return self.zone.t_air, price
+        self.cur_state = [t_out, self.t_m_prev, self.time % 24, int(self.time/24) % 7]
+        reward = self.get_reward(self.t_m_prev, t_out)
+        self.ep_reward += reward
+        return self.cur_state, reward, self.time >= 1024, []
 
     def plot_results(self, attr='t_air'):
         annual_results = pd.DataFrame(self.results)
         annual_results[[attr]].plot()
         plt.show()
+
+    def get_obs(self):
+        return self.cur_state
 
     def get_avg_hourly_price(self):
         '''
@@ -100,3 +113,11 @@ class SimEnv(Env):
         '''
         hour_prices = self.prices['Settlement Point Price'][self.time*4: self.time*4 + 4]
         return sum(hour_prices)/4
+
+    def get_timestamp_and_weather(self):
+        row = self.weather.reset_index().iloc[self.time]
+        return row[0], row[1:]
+
+    def get_reward(self, price, t_air, lam=0.2):
+        #TODO: test lam as a hyperparameter / better reward design
+        return -price + lam*(abs(t_air-21.1))
