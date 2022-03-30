@@ -1,5 +1,6 @@
 from gym import Env, spaces
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 from collections import defaultdict
 
@@ -20,8 +21,15 @@ class SimEnv(Env):
         """
         super(SimEnv, self).__init__()
 
-        self.observation_space = 4
+        inf = float('inf')
+        self.observation_space = spaces.Box(low = np.array([-inf, -inf, -inf, -inf]),
+                                            high = np.array([inf, inf, inf, inf]),
+                                            dtype = np.float32) 
+        self.action_space = spaces.Box(low = np.array([-20, -20]),
+                                        high = np.array([20, 20]),
+                                        dtype = np.float32)
 
+        self.action_space
         self.prices = prices
         self.weather = weather
         self.agent = agent
@@ -34,6 +42,7 @@ class SimEnv(Env):
     def reset(self):
         # reset time to a random time in the year 
         self.time = random.randint(0, 8760)
+        self.timestep = 0
         
         # set episode return to 0
         self.ep_reward = 0
@@ -52,7 +61,6 @@ class SimEnv(Env):
         """
         :param Array of size two to determine change in heating and cooling temperature respectively
         """
-
         self.zone.t_set_heating += action[0]
         self.zone.t_set_cooling += action[1]
 
@@ -95,9 +103,12 @@ class SimEnv(Env):
             self.time = 0
 
         self.cur_state = [t_out, self.t_m_prev, self.time % 24, int(self.time/24) % 7]
-        reward = self.get_reward(self.t_m_prev, t_out)
+        reward, info = self.get_reward(self.t_m_prev, t_out)
         self.ep_reward += reward
-        return self.cur_state, reward, self.time >= 1024, []
+        self.timestep += 1
+        info['success'] = False
+        
+        return self.cur_state, reward, self.timestep >= 1024, info
 
     def plot_results(self, attr='t_air'):
         annual_results = pd.DataFrame(self.results)
@@ -120,4 +131,5 @@ class SimEnv(Env):
 
     def get_reward(self, price, t_air, lam=0.2):
         #TODO: test lam as a hyperparameter / better reward design
-        return -price + lam*(abs(t_air-21.1))
+        info = {'reward':  -(price + lam*(abs(t_air-21.1)))}
+        return -(price + lam*(abs(t_air-21.1))), info
