@@ -4,6 +4,8 @@ import pandas as pd
 from pysolar.solar import get_position
 import pytz
 
+from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
+
 
 class ErcotPriceReader:
 
@@ -99,3 +101,24 @@ def sun_position(latitude, longitude, timestamp):
     if isinstance(timestamp, pd.Timestamp):
         timestamp = timestamp.to_pydatetime()
     return get_position(latitude, longitude, timestamp)
+
+
+def read_tf_log(log_dir):
+    log_dir = Path(log_dir)
+    log_files = list(log_dir.glob(f'**/events.*'))
+    if len(log_files) < 1:
+        return None
+    log_file = log_files[0]
+    event_acc = EventAccumulator(log_file.as_posix())
+    event_acc.Reload()
+    tags = event_acc.Tags()
+    try:
+        scalar_success = event_acc.Scalars('train/episode_success')
+        success_rate = [x.value for x in scalar_success]
+        steps = [x.step for x in scalar_success]
+        scalar_return = event_acc.Scalars('train/episode_return/mean')
+        returns = [x.value for x in scalar_return]
+    except:
+        return None
+    return steps, returns, success_rate
+
