@@ -1,8 +1,18 @@
 from collections import defaultdict
-import os
+import os, sys
 
-from deep_hvac.util import ErcotPriceReader, NsrdbReader, sun_position
+hvac_dir = os.path.join(
+        os.path.split(os.path.abspath(__file__))[0],
+        '..', 'deep_hvac'
+    )
+sys.path.insert(2, hvac_dir)
+from util import ErcotPriceReader, NsrdbReader, sun_position
 
+sim_dir = os.path.join(
+        os.path.split(os.path.abspath(__file__))[0],
+        '..', 'rc-building-sim'
+    )
+sys.path.insert(1, sim_dir)
 from rc_simulator.building_physics import Zone
 from rc_simulator import supply_system
 from rc_simulator import emission_system
