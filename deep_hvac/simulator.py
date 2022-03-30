@@ -15,6 +15,9 @@ class SimEnv(Env):
 
     def __init__(self, prices, weather, agent, coords, zone, windows):
         """
+        TODO: Add lower/upper band for comfort bounds
+        TODO: Add lower/upper band for massive reward penalty
+
         :param DataFrame prices: 15m electricity prices. DatetimeIndex.
         :param DataFrame weather: hourly weather. DatetimeIndex.
         :param Agent agent: RL agent.
@@ -25,6 +28,7 @@ class SimEnv(Env):
         super(SimEnv, self).__init__()
 
         inf = float('inf')
+        # TODO: add current heating/cooling setpoint to observation
         self.observation_space = spaces.Box(low=np.array([-inf, -inf, -inf, -inf]),
                                             high=np.array([inf, inf, inf, inf]),
                                             dtype=np.float32)
@@ -45,6 +49,7 @@ class SimEnv(Env):
 
     def reset(self):
         # reset time to a random time in the year
+        # TODO: Reset to a random time that guarantees a full episode
         self.time = random.randint(0, 8760)
         self.timestep = 0
 
@@ -113,6 +118,9 @@ class SimEnv(Env):
         if self.time >= 8760:
             self.time = 0
 
+        # TODO: t_m_prev is privileged, reset to t_air
+        # TODO: move to using timestamps instead of hour int for generalizability
+        # to test case
         self.cur_state = [t_out, self.t_m_prev, self.time % 24, int(self.time/24) % 7]
         reward, info = self.get_reward(self.t_m_prev, t_out)
         self.ep_reward += reward
@@ -145,7 +153,8 @@ class SimEnv(Env):
         return row[0], row[1:]
 
     def get_reward(self, price, t_air, lam=0.2):
-        """Return tuple of reward and """
+        """Return tuple of reward and info dict."""
         # TODO: test lam as a hyperparameter / better reward design
+        # TODO: deadband for comfort penalty
         info = {'reward':  -(price + lam*(abs(t_air-21.1)))}
         return -(price + lam*(abs(t_air-21.1))), info

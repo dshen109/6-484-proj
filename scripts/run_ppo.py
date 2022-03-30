@@ -40,12 +40,12 @@ if __name__ == "__main__":
     latitude, longitude = 29.749907, -95.358421
 
     env_args = {
-        'prices' : ercot.prices, 
-        'weather' : nsrdb.weather_hourly, 
+        'prices': ercot.prices,
+        'weather': nsrdb.weather_hourly,
         'agent': None,
         'coords': [latitude, longitude],
-        'zone':office,
-        'windows':[south_window]
+        'zone': office,
+        'windows': [south_window]
     }
 
     env_name = 'DefaultBuilding-v0'
@@ -56,5 +56,5 @@ if __name__ == "__main__":
         entry_point=f'simulator:SimEnv',
         kwargs=env_args
     )
-    
+
     train_ppo(env_name='DefaultBuilding-v0')
