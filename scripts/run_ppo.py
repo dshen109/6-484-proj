@@ -1,7 +1,7 @@
-import os, sys, gym
+import os, sys
 import pandas as pd
-from gym import spaces
 from gym.envs.registration import registry, register
+import random
 
 sim_dir = os.path.join(
         os.path.split(os.path.abspath(__file__))[0],
@@ -9,8 +9,6 @@ sim_dir = os.path.join(
     )
 sys.path.insert(1, sim_dir)
 from rc_simulator.building_physics import Zone
-from rc_simulator import supply_system
-from rc_simulator import emission_system
 from rc_simulator.radiation import Window
 
 
@@ -23,7 +21,10 @@ from util import NsrdbReader, ErcotPriceReader
 from simulator import SimEnv
 from ppo import train_ppo
 
-if __name__ == "__main__":
+def make_ppo_agent(max_steps=100000):
+
+    random.seed(12)
+
     datadir = os.path.join(
         os.path.split(os.path.abspath(__file__))[0],
         '..', 'data'
@@ -57,4 +58,7 @@ if __name__ == "__main__":
         kwargs=env_args
     )
 
-    train_ppo(env_name='DefaultBuilding-v0')
+    return train_ppo(env_name='DefaultBuilding-v0', max_steps=max_steps)
+
+if __name__ == "__main__":
+    make_ppo_agent(max_steps=500000)

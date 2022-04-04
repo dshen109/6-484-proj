@@ -13,11 +13,8 @@ class SimEnv(Env):
     :ivar int time: Hour of the year
     """
 
-    def __init__(self, prices, weather, agent, coords, zone, windows):
+    def __init__(self, prices, weather, agent, coords, zone, windows, ep_length=1024):
         """
-        TODO: Add lower/upper band for comfort bounds
-        TODO: Add lower/upper band for massive reward penalty
-
         :param DataFrame prices: 15m electricity prices. DatetimeIndex.
         :param DataFrame weather: hourly weather. DatetimeIndex.
         :param Agent agent: RL agent.
@@ -27,11 +24,9 @@ class SimEnv(Env):
         """
         super(SimEnv, self).__init__()
 
-        #TODO: include band settings in observation
         inf = float('inf')
-        # TODO: add current heating/cooling setpoint to observation
-        self.observation_space = spaces.Box(low=np.array([-inf, -inf, -inf, -inf]),
-                                            high=np.array([inf, inf, inf, inf]),
+        self.observation_space = spaces.Box(low=np.array([-inf, -inf, -inf, -inf, -inf, -inf]),
+                                            high=np.array([inf, inf, inf, inf, inf, inf]),
                                             dtype=np.float32)
         # First element is heating setpoint, second element is cooling setpoint.
         self.action_space = spaces.Box(low=np.array([-20, -20]),
@@ -45,24 +40,33 @@ class SimEnv(Env):
         self.latitude, self.longitude = coords
         self.zone = zone
         self.windows = windows
+        self.ep_length = ep_length
 
         self.reset()
 
     def reset(self):
         # reset time to a random time in the year
         # TODO: Reset to a random time that guarantees a full episode
-        self.time = random.randint(0, 8760)
+        self.time = random.randint(1000, 8760 - self.ep_length)
         self.timestep = 0
 
         # set episode return to 0
         self.ep_reward = 0
 
+        self.zone.t_set_heating = 20
+        self.zone.t_set_cooling = 25
+
         # reset the temperature of the building mass
         self.t_m_prev = random.randint(15, 25)
+        self.step_bulk()
         timestamp, cur_weather = self.get_timestamp_and_weather()
         self.cur_state = [
-            cur_weather['Temperature'], self.t_m_prev, self.time % 24,
-            int(self.time/24) % 7
+            self.zone.t_set_heating, 
+            self.zone.t_set_cooling, 
+            cur_weather['Temperature'], 
+            getattr(self.zone, 't_air'), 
+            timestamp.hour,
+            timestamp.weekday()
         ]
 
         # reset the episodes results
@@ -70,13 +74,7 @@ class SimEnv(Env):
 
         return self.cur_state
 
-    def step(self, action):
-        """
-        :param Array of size two to determine change in heating and cooling
-        temperature respectively
-        """
-        self.zone.t_set_heating += action[0]
-        self.zone.t_set_cooling += action[1]
+    def step_bulk(self):
 
         timestamp, cur_weather = self.get_timestamp_and_weather()
 
@@ -99,6 +97,20 @@ class SimEnv(Env):
         )
         self.t_m_prev = self.zone.t_m_next
 
+        self.time += 1
+
+        return timestamp, t_out
+
+    def step(self, action):
+        """
+        :param Array of size two to determine change in heating and cooling
+        temperature respectively
+        """
+        self.zone.t_set_heating += action[0]
+        self.zone.t_set_cooling += action[1]
+
+        timestamp, t_out = self.step_bulk()
+
         for attr in ('heating_demand', 'heating_energy', 'cooling_demand',
                      'cooling_energy', 'electricity_out', 't_air'):
             self.results[attr].append(getattr(self.zone, attr))
@@ -113,19 +125,17 @@ class SimEnv(Env):
         self.results['electricity_consumed'].append(elec_consumed)
         self.results['price'].append(elec_consumed * price)
 
-        self.time += 1
-        # Allow for a rollover into january from December
-        # TODO: We might not want to do this since the air temperatures will be
-        # discontinuous
-        if self.time >= 8760:
-            self.time = 0
-
-        # TODO: t_m_prev is privileged, reset to t_air
-        # TODO: move to using timestamps instead of hour int for generalizability
-        # to test case
-        self.cur_state = [t_out, self.t_m_prev, self.time % 24, int(self.time/24) % 7]
+        self.cur_state = [self.zone.t_set_heating, 
+                         self.zone.t_set_cooling, 
+                         t_out, 
+                         getattr(self.zone, 't_air'), 
+                         timestamp.hour,
+                         timestamp.weekday()]
         reward, info = self.get_reward(self.t_m_prev, t_out)
         self.ep_reward += reward
+        self.results['reward'].append(reward)
+        self.results['set_heating'].append(self.zone.t_set_heating)
+        self.results['set_cooling'].append(self.zone.t_set_cooling)
         self.timestep += 1
         info['success'] = False
 
@@ -156,7 +166,8 @@ class SimEnv(Env):
 
     def get_reward(self, price, t_air, lam=0.2):
         """Return tuple of reward and info dict."""
-        # TODO: test lam as a hyperparameter / better reward design
-        # TODO: deadband for comfort penalty
-        info = {'reward':  -(price + lam*(abs(t_air-21.1)))}
-        return -(price + lam*(abs(t_air-21.1))), info
+        reward = -price
+        if t_air < 20 or t_air > 25:
+            reward -= 1000
+        info = {'reward':  reward}
+        return reward, info
