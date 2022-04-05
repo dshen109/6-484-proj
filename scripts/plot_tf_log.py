@@ -34,7 +34,7 @@ def read_tf_log(log_dir):
     return steps, returns, success_rate
 
 
-def plot_curves(data_dict, title):
+def plot_curves(data_dict, title, xlabel='Steps', ylabel='Reward'):
     # {label: [x, y]}
     fig, ax = plt.subplots(figsize=(4, 3))
     labels = data_dict.keys()
@@ -43,8 +43,8 @@ def plot_curves(data_dict, title):
         y = data[1]
         ax.plot(x, y, label=label)
     ax.set_title(title)
-    ax.set_xlabel('Steps')
-    ax.set_ylabel('Reward')
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
     ax.legend()
 
     plt.show()

@@ -131,7 +131,7 @@ class SimEnv(Env):
                          getattr(self.zone, 't_air'), 
                          timestamp.hour,
                          timestamp.weekday()]
-        reward, info = self.get_reward(self.t_m_prev, t_out)
+        reward, info = self.get_reward(elec_consumed * price, getattr(self.zone, 't_air'))
         self.ep_reward += reward
         self.results['reward'].append(reward)
         self.results['set_heating'].append(self.zone.t_set_heating)
