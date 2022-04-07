@@ -23,7 +23,7 @@ def get_results(agent, env, episode_steps=1024, max_steps=100000):
 
     results = defaultdict(list)
     total_steps=0
-    
+
     while total_steps < max_steps:
         ep_results = run_episode(agent, env, episode_steps)
         update_results(results, ep_results)
@@ -34,12 +34,15 @@ def get_results(agent, env, episode_steps=1024, max_steps=100000):
 if __name__ == "__main__":
 
     # make environment of Houston
+    print("Making environment")
     env = make_default_env()
 
     # run steps and collect results on naive_agent
+    print("Running naive agent")
     naive_results = naive_agent()
 
     # run steps and collect results on ppo_agent
+    print("Running PPO agent")
     agent_ppo, _ =  make_ppo_agent(max_steps = 100000)
     ppo_results = get_results(agent_ppo, env)
 
