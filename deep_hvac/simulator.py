@@ -61,10 +61,10 @@ class SimEnv(Env):
         self.step_bulk()
         timestamp, cur_weather = self.get_timestamp_and_weather()
         self.cur_state = [
-            self.zone.t_set_heating, 
-            self.zone.t_set_cooling, 
-            cur_weather['Temperature'], 
-            getattr(self.zone, 't_air'), 
+            self.zone.t_set_heating,
+            self.zone.t_set_cooling,
+            cur_weather['Temperature'],
+            getattr(self.zone, 't_air'),
             timestamp.hour,
             timestamp.weekday()
         ]
@@ -75,6 +75,7 @@ class SimEnv(Env):
         return self.cur_state
 
     def step_bulk(self):
+        """Step through the building simulator."""
 
         timestamp, cur_weather = self.get_timestamp_and_weather()
 
@@ -125,10 +126,10 @@ class SimEnv(Env):
         self.results['electricity_consumed'].append(elec_consumed)
         self.results['price'].append(elec_consumed * price)
 
-        self.cur_state = [self.zone.t_set_heating, 
-                         self.zone.t_set_cooling, 
-                         t_out, 
-                         getattr(self.zone, 't_air'), 
+        self.cur_state = [self.zone.t_set_heating,
+                         self.zone.t_set_cooling,
+                         t_out,
+                         getattr(self.zone, 't_air'),
                          timestamp.hour,
                          timestamp.weekday()]
         reward, info = self.get_reward(elec_consumed * price, getattr(self.zone, 't_air'))
