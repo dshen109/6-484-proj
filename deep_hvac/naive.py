@@ -1,8 +1,6 @@
 from collections import defaultdict
-from contextlib import AsyncExitStack
 import random, os, sys
 import matplotlib.pyplot as plt
-import numpy as np
 
 from simulator import SimEnv
 from util import NsrdbReader, ErcotPriceReader
@@ -15,11 +13,13 @@ sys.path.insert(1, sim_dir)
 from rc_simulator.building_physics import Zone
 from rc_simulator.radiation import Window
 
+
 def run_episode(env, ep_steps):
     env.reset()
     for _ in range(ep_steps):
         env.step([0, 0])
     return env.results
+
 
 def plot_curves(data_dict, title):
     # {label: [x, y]}
@@ -34,9 +34,11 @@ def plot_curves(data_dict, title):
 
     plt.show()
 
+
 def update_results(results, ep_results):
     for k in ep_results.keys():
         results[k].append(ep_results[k])
+
 
 def make_default_env():
     datadir = os.path.join(
@@ -65,20 +67,21 @@ def make_default_env():
     return env
 
 def naive_agent(env_name='DefaultBuilding-v0', max_steps=100000):
+    """Naive agent that follows a fixed temperature schedule."""
     episode_steps = 1024
     results = defaultdict(list)
     total_steps = 0
     random.seed(12)
 
     env = make_default_env()
-    
+
     while total_steps < max_steps:
         ep_results = run_episode(env, episode_steps)
         update_results(results, ep_results)
         total_steps += episode_steps
 
     return results
-    
+
 
 if __name__ == "__main__":
     print(naive_agent().keys())
