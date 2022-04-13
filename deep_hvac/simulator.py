@@ -1,12 +1,13 @@
-from socket import timeout
+from collections import defaultdict
+import random
+
 from gym import Env, spaces
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from collections import defaultdict
 
-from util import sun_position
-import random
+from deep_hvac.util import sun_position
+
 
 class SimEnv(Env):
     """Simulation environment
@@ -14,7 +15,8 @@ class SimEnv(Env):
     :ivar int time: Hour of the year
     """
 
-    def __init__(self, prices, weather, agent, coords, zone, windows, ep_length=1024):
+    def __init__(self, prices, weather, agent, coords, zone, windows,
+                 ep_length=1024, discomfort_multiplier=0.2):
         """
         :param DataFrame prices: 15m electricity prices. DatetimeIndex.
         :param DataFrame weather: hourly weather. DatetimeIndex.
@@ -22,6 +24,7 @@ class SimEnv(Env):
         :param tuple coords: (latitude, longitude) of the building
         :param Zone zone: Zone object of the building
         :param Array of Windows in the building
+        :param int ep_length: Total length of episode, hours
         """
         super(SimEnv, self).__init__()
 
@@ -43,6 +46,8 @@ class SimEnv(Env):
         self.windows = windows
         self.ep_length = ep_length
 
+        self.lambda_discomf = discomfort_multiplier
+
         self.reset()
 
     def reset(self, time=5024):
@@ -62,10 +67,10 @@ class SimEnv(Env):
         self.step_bulk()
         timestamp, cur_weather = self.get_timestamp_and_weather()
         self.cur_state = [
-            self.zone.t_set_heating, 
-            self.zone.t_set_cooling, 
-            cur_weather['Temperature'], 
-            self.t_m_prev, 
+            self.zone.t_set_heating,
+            self.zone.t_set_cooling,
+            cur_weather['Temperature'],
+            self.t_m_prev,
             timestamp.hour,
             timestamp.weekday()
         ]
@@ -76,6 +81,8 @@ class SimEnv(Env):
         return self.cur_state
 
     def step_bulk(self):
+        """Step through the building simulator and update the bulk building
+        mass."""
 
         timestamp, cur_weather = self.get_timestamp_and_weather()
 
@@ -104,11 +111,11 @@ class SimEnv(Env):
 
     def step(self, action):
         """
-        :param Array of size two to determine change in heating and cooling
-        temperature respectively
+        :param Array of size two to determine new setpoint for heating and
+        cooling temperature respectively
         """
-        self.zone.t_set_heating += action[0]
-        self.zone.t_set_cooling += action[1]
+        self.zone.t_set_heating = action[0]
+        self.zone.t_set_cooling = action[1]
 
         timestamp, t_out = self.step_bulk()
 
@@ -126,10 +133,10 @@ class SimEnv(Env):
         self.results['electricity_consumed'].append(elec_consumed)
         self.results['price'].append(elec_consumed * price)
 
-        self.cur_state = [self.zone.t_set_heating, 
-                         self.zone.t_set_cooling, 
-                         t_out, 
-                         self.t_m_prev, 
+        self.cur_state = [self.zone.t_set_heating,
+                         self.zone.t_set_cooling,
+                         t_out,
+                         self.t_m_prev,
                          timestamp.hour,
                          timestamp.weekday()]
         reward, info = self.get_reward(elec_consumed * price, self.t_m_prev)
@@ -161,14 +168,26 @@ class SimEnv(Env):
     def get_timestamp_and_weather(self):
         """
         Get timestamp represented by `self.time`
+
+        :return: timestamp, weather data.
         """
         row = self.weather.reset_index().iloc[self.time]
         return row[0], row[1:]
 
     def get_reward(self, price, t_air):
-        """Return tuple of reward and info dict."""
-        reward = -price
-        if t_air < 20 or t_air > 25:
-            reward -= 50000
+        """Return tuple of reward and info dict.
+
+        :param float price: Total cost paid for electricity
+        :param float t_air: Air temperature
+        :param float lam: Air temperature penalty.
+        """
+        reward = - price
+        timestamp, _ = self.get_timestamp_and_weather()
+        # penalty only applies if it is a weekday and between 8am - 6pm
+        is_weekday = timestamp.weekday() < 5
+        hour = timestamp.hour
+        if is_weekday and (hour < 8 or hour >= 6):
+            if t_air < 20 or t_air > 25:
+                reward -= 50000
         info = {'reward':  reward}
         return reward, info
