@@ -15,7 +15,8 @@ class SimEnv(Env):
     :ivar int time: Hour of the year
     """
 
-    def __init__(self, prices, weather, agent, coords, zone, windows, ep_length=1024):
+    def __init__(self, prices, weather, agent, coords, zone, windows,
+                 ep_length=1024, discomfort_multiplier=0.2):
         """
         :param DataFrame prices: 15m electricity prices. DatetimeIndex.
         :param DataFrame weather: hourly weather. DatetimeIndex.
@@ -23,6 +24,7 @@ class SimEnv(Env):
         :param tuple coords: (latitude, longitude) of the building
         :param Zone zone: Zone object of the building
         :param Array of Windows in the building
+        :param int ep_length: Total length of episode, hours
         """
         super(SimEnv, self).__init__()
 
@@ -43,6 +45,8 @@ class SimEnv(Env):
         self.zone = zone
         self.windows = windows
         self.ep_length = ep_length
+
+        self.lambda_discomf = discomfort_multiplier
 
         self.reset()
 
@@ -171,14 +175,14 @@ class SimEnv(Env):
         row = self.weather.reset_index().iloc[self.time]
         return row[0], row[1:]
 
-    def get_reward(self, price, t_air, lam=0.2):
+    def get_reward(self, price, t_air):
         """Return tuple of reward and info dict.
 
         :param float price: Total cost paid for electricity
         :param float t_air: Air temperature
         :param float lam: Air temperature penalty.
         """
-        reward = -price
+        reward = - price
         timestamp, _ = self.get_timestamp_and_weather()
         # penalty only applies if it is a weekday and between 8am - 6pm
         is_weekday = timestamp.weekday() < 5
