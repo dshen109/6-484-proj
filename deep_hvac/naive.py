@@ -64,7 +64,7 @@ def make_default_env():
                  coords=[latitude, longitude],
                  zone=office,
                  windows=[south_window]
-        )
+    )
 
     return env
 
@@ -89,6 +89,7 @@ def naive_agent(env_name='DefaultBuilding-v0', max_steps=100000,
             cooling_temp=cooling_temp)
         update_results(results, ep_results)
         total_steps += episode_steps
+        # Break after 1 run because no need to train.
         break
 
     return results
