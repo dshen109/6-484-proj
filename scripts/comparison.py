@@ -22,7 +22,7 @@ def run_episode(agent, env, episode_steps):
 def get_results(agent, env, episode_steps=1024, max_steps=100000):
 
     results = defaultdict(list)
-    total_steps=0
+    total_steps = 0
     
     while total_steps < max_steps:
         ep_results = run_episode(agent, env, episode_steps)
@@ -55,6 +55,6 @@ if __name__ == "__main__":
                   'Naive Cooling': [[i for i in range(1024)], list(np.mean(np.array(naive_results['set_cooling']), axis=0))]}
 
 
-    plot_curves(price_dict, "Average Price Per Step for 100 Random Episodes", xlabel='Step', ylabel='Price')
-    plot_curves(air_dict, "Average Air Temperature Per Step for 100 Random Episodes", xlabel='Step', ylabel='Temp')
-    plot_curves(settings_dict, "Average Thermostat Settings Per Step for 100 Random Episodes", xlabel='Step', ylabel='Temp')
+    plot_curves(price_dict, "", xlabel='Step', ylabel='Price')
+    plot_curves(air_dict, "", xlabel='Step', ylabel='Temp')
+    plot_curves(settings_dict, "", xlabel='Step', ylabel='Temp')

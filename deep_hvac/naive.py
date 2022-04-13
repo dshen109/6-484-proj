@@ -71,6 +71,7 @@ def naive_agent(env_name='DefaultBuilding-v0', max_steps=100000):
     random.seed(12)
 
     env = make_default_env()
+    env.zone.t_set_cooling = 40
     
     while total_steps < max_steps:
         ep_results = run_episode(env, episode_steps)
