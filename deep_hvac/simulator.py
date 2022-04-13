@@ -107,11 +107,11 @@ class SimEnv(Env):
 
     def step(self, action):
         """
-        :param Array of size two to determine change in heating and cooling
-        temperature respectively
+        :param Array of size two to determine new setpoint for heating and
+        cooling temperature respectively
         """
-        self.zone.t_set_heating += action[0]
-        self.zone.t_set_cooling += action[1]
+        self.zone.t_set_heating = action[0]
+        self.zone.t_set_cooling = action[1]
 
         timestamp, t_out = self.step_bulk()
 
