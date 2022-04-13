@@ -86,7 +86,8 @@ class SimEnv(Env):
 
         timestamp, cur_weather = self.get_timestamp_and_weather()
 
-        altitude, azimuth = sun_position(self.latitude, self.longitude, timestamp)
+        altitude, azimuth = sun_position(
+            self.latitude, self.longitude, timestamp)
 
         for window in self.windows:
             window.calc_solar_gains(
