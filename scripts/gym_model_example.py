@@ -18,8 +18,8 @@ hvac_dir = os.path.join(
     )
 sys.path.insert(2, hvac_dir)
 from util import NsrdbReader, ErcotPriceReader
-from simulator import SimEnv
 
+from simulator import SimEnv
 if __name__ == "__main__":
     datadir = os.path.join(
         os.path.split(os.path.abspath(__file__))[0],
@@ -36,8 +36,8 @@ if __name__ == "__main__":
 
     latitude, longitude = 29.749907, -95.358421
 
-    env = SimEnv(prices=ercot.prices, 
-                 weather=nsrdb.weather_hourly, 
+    env = SimEnv(prices=ercot.prices,
+                 weather=nsrdb.weather_hourly,
                  agent=None,
                  coords=[latitude, longitude],
                  zone=office,

@@ -12,6 +12,7 @@ sys.path.insert(2, hvac_dir)
 from naive import naive_agent, make_default_env, update_results
 from run_ppo import make_ppo_agent
 
+
 def run_episode(agent, env, episode_steps):
     env.reset()
     for _ in range(episode_steps):
@@ -19,10 +20,11 @@ def run_episode(agent, env, episode_steps):
         env.step(action[0])
     return env.results
 
+
 def get_results(agent, env, episode_steps=1024, max_steps=100000):
 
     results = defaultdict(list)
-    total_steps=0
+    total_steps = 0
 
     while total_steps < max_steps:
         ep_results = run_episode(agent, env, episode_steps)
@@ -30,6 +32,7 @@ def get_results(agent, env, episode_steps=1024, max_steps=100000):
         total_steps += episode_steps
 
     return results
+
 
 if __name__ == "__main__":
 
@@ -43,7 +46,7 @@ if __name__ == "__main__":
 
     # run steps and collect results on ppo_agent
     print("Running PPO agent")
-    agent_ppo, _ =  make_ppo_agent(max_steps = 100000)
+    agent_ppo, _ = make_ppo_agent(max_steps=100000)
     ppo_results = get_results(agent_ppo, env)
 
     price_dict = {'PPO Price':[[i for i in range(1024)], list(np.mean(np.array(ppo_results['price']), axis=0))],

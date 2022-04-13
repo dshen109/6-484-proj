@@ -1,11 +1,13 @@
+from collections import defaultdict
+import random
+
 from gym import Env, spaces
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from collections import defaultdict
 
-from util import sun_position
-import random
+from deep_hvac.util import sun_position
+
 
 class SimEnv(Env):
     """Simulation environment
@@ -75,7 +77,8 @@ class SimEnv(Env):
         return self.cur_state
 
     def step_bulk(self):
-        """Step through the building simulator."""
+        """Step through the building simulator and update the bulk building
+        mass."""
 
         timestamp, cur_weather = self.get_timestamp_and_weather()
 
@@ -127,12 +130,13 @@ class SimEnv(Env):
         self.results['price'].append(elec_consumed * price)
 
         self.cur_state = [self.zone.t_set_heating,
-                         self.zone.t_set_cooling,
-                         t_out,
-                         getattr(self.zone, 't_air'),
-                         timestamp.hour,
-                         timestamp.weekday()]
-        reward, info = self.get_reward(elec_consumed * price, getattr(self.zone, 't_air'))
+                          self.zone.t_set_cooling,
+                          t_out,
+                          getattr(self.zone, 't_air'),
+                          timestamp.hour,
+                          timestamp.weekday()]
+        reward, info = self.get_reward(
+            elec_consumed * price, getattr(self.zone, 't_air'))
         self.ep_reward += reward
         self.results['reward'].append(reward)
         self.results['set_heating'].append(self.zone.t_set_heating)
@@ -161,14 +165,26 @@ class SimEnv(Env):
     def get_timestamp_and_weather(self):
         """
         Get timestamp represented by `self.time`
+
+        :return: timestamp, weather data.
         """
         row = self.weather.reset_index().iloc[self.time]
         return row[0], row[1:]
 
     def get_reward(self, price, t_air, lam=0.2):
-        """Return tuple of reward and info dict."""
+        """Return tuple of reward and info dict.
+
+        :param float price: Total cost paid for electricity
+        :param float t_air: Air temperature
+        :param float lam: Air temperature penalty.
+        """
         reward = -price
-        if t_air < 20 or t_air > 25:
-            reward -= 1000
+        timestamp, _ = self.get_timestamp_and_weather()
+        # penalty only applies if it is a weekday and between 8am - 6pm
+        is_weekday = timestamp.weekday() < 5
+        hour = timestamp.hour
+        if is_weekday and (hour < 8 or hour >= 6):
+            if t_air < 20 or t_air > 25:
+                reward -= 1000
         info = {'reward':  reward}
         return reward, info
