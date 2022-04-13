@@ -61,4 +61,4 @@ def make_ppo_agent(max_steps=100000):
     return train_ppo(env_name='DefaultBuilding-v0', max_steps=max_steps)
 
 if __name__ == "__main__":
-    make_ppo_agent(max_steps=100000)
+    make_ppo_agent(max_steps=600000)

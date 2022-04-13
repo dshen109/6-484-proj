@@ -33,8 +33,8 @@ class SimEnv(Env):
                                             high=np.array([inf, inf, inf, inf, inf, inf]),
                                             dtype=np.float32)
         # First element is heating setpoint, second element is cooling setpoint.
-        self.action_space = spaces.Box(low=np.array([-20, -20]),
-                                       high=np.array([20, 20]),
+        self.action_space = spaces.Box(low=np.array([-10, -10]),
+                                       high=np.array([10, 10]),
                                        dtype=np.float32)
 
         self.action_space
@@ -50,10 +50,10 @@ class SimEnv(Env):
 
         self.reset()
 
-    def reset(self):
+    def reset(self, time=5024):
         # reset time to a random time in the year
         # TODO: Reset to a random time that guarantees a full episode
-        self.time = random.randint(1000, 8760 - self.ep_length)
+        self.time = time
         self.timestep = 0
 
         # set episode return to 0
@@ -70,7 +70,7 @@ class SimEnv(Env):
             self.zone.t_set_heating,
             self.zone.t_set_cooling,
             cur_weather['Temperature'],
-            getattr(self.zone, 't_air'),
+            self.t_m_prev,
             timestamp.hour,
             timestamp.weekday()
         ]
@@ -122,7 +122,7 @@ class SimEnv(Env):
         for attr in ('heating_demand', 'heating_energy', 'cooling_demand',
                      'cooling_energy', 'electricity_out', 't_air'):
             self.results[attr].append(getattr(self.zone, attr))
-        self.results['t_out'].append(t_out)
+        self.results['t_inside'].append(self.t_m_prev)
 
         self.results['solar_gain'].append(
             sum([window.solar_gains for window in self.windows]))
@@ -134,13 +134,12 @@ class SimEnv(Env):
         self.results['price'].append(elec_consumed * price)
 
         self.cur_state = [self.zone.t_set_heating,
-                          self.zone.t_set_cooling,
-                          t_out,
-                          getattr(self.zone, 't_air'),
-                          timestamp.hour,
-                          timestamp.weekday()]
-        reward, info = self.get_reward(
-            elec_consumed * price, getattr(self.zone, 't_air'))
+                         self.zone.t_set_cooling,
+                         t_out,
+                         self.t_m_prev,
+                         timestamp.hour,
+                         timestamp.weekday()]
+        reward, info = self.get_reward(elec_consumed * price, self.t_m_prev)
         self.ep_reward += reward
         self.results['reward'].append(reward)
         self.results['set_heating'].append(self.zone.t_set_heating)
@@ -189,6 +188,6 @@ class SimEnv(Env):
         hour = timestamp.hour
         if is_weekday and (hour < 8 or hour >= 6):
             if t_air < 20 or t_air > 25:
-                reward -= 1000
+                reward -= 50000
         info = {'reward':  reward}
         return reward, info
