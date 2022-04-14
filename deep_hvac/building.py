@@ -18,6 +18,9 @@ WINDOW_AREA_WEST = WINDOW_AREA_EAST
 
 SHGC = 0.251
 
+HOUSTON_LAT = 29.749907
+HOUSTON_LONG = -95.358421
+
 
 def default_building():
     """Make an office building representative of a default building.
@@ -51,8 +54,8 @@ def default_building():
         thermal_capacitance_per_floor_area=165000,
         t_set_heating=21,
         t_set_cooling=26,
-        max_cooling_energy_per_floor_area=464338 / single_floor_area / 3,
-        max_heating_energy_per_floor_area=20000 / single_floor_area / 3,
+        max_cooling_energy_per_floor_area=-464338 / single_floor_area / 3,
+        max_heating_energy_per_floor_area=220516 / single_floor_area / 3,
         heating_supply_system=supply_system.HeatPumpAir,
         cooling_supply_system=supply_system.HeatPumpAir,
         heating_emission_system=AirConditioning,
@@ -74,4 +77,4 @@ def default_building():
                area=WINDOW_AREA_WEST)
     ]
 
-    return zone, windows
+    return zone, windows, HOUSTON_LAT, HOUSTON_LONG
