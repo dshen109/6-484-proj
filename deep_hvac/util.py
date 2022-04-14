@@ -70,14 +70,12 @@ class NsrdbReader:
 
         self.weather = frame
         # Create hourly weather.
-        timedelta = (
-            self.weather.index[1] - self.weather.index[0]
-        ).total_seconds() / 3600
+        # timedelta = (
+        #     self.weather.index[1] - self.weather.index[0]
+        # ).total_seconds() / 3600
         self.weather_hourly = self.weather.resample('1H').mean()
-        hourly_sums = self.weather.resample('1H').sum()
         for col in [self.dirnorrad_col, self.difhorrad_col]:
-            self.weather_hourly[col + '_Whm2'] = \
-                hourly_sums[col] * timedelta
+            self.weather_hourly[col + '_Wm2'] = self.weather_hourly[col]
 
 
 def hour_of_year(timestamp):
