@@ -108,6 +108,7 @@ class SimEnv(Env):
 
         t_out = self.get_temperature(self.time)
 
+        # TODO: Get internal gains from occupants
         self.zone.solve_energy(
             internal_gains=0,
             solar_gains=sum([window.solar_gains for window in self.windows]),
