@@ -70,7 +70,7 @@ class SimEnv(Env):
             self.zone.t_set_heating,
             self.zone.t_set_cooling,
             cur_weather['Temperature'],
-            self.t_m_prev,
+            self.zone.t_air,
             timestamp.hour,
             timestamp.weekday()
         ]
@@ -122,7 +122,7 @@ class SimEnv(Env):
         for attr in ('heating_demand', 'heating_energy', 'cooling_demand',
                      'cooling_energy', 'electricity_out', 't_air'):
             self.results[attr].append(getattr(self.zone, attr))
-        self.results['t_inside'].append(self.t_m_prev)
+        self.results['t_inside'].append(self.zone.t_air)
 
         self.results['solar_gain'].append(
             sum([window.solar_gains for window in self.windows]))
@@ -136,7 +136,7 @@ class SimEnv(Env):
         self.cur_state = [self.zone.t_set_heating,
                          self.zone.t_set_cooling,
                          t_out,
-                         self.t_m_prev,
+                         self.zone.t_air,
                          timestamp.hour,
                          timestamp.weekday()]
         reward, info = self.get_reward(elec_consumed * price, self.t_m_prev)
