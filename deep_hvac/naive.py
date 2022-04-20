@@ -64,7 +64,7 @@ def make_default_env():
                  coords=[latitude, longitude],
                  zone=office,
                  windows=[south_window]
-    )
+        )
 
     return env
 
