@@ -21,6 +21,11 @@ SHGC = 0.251
 HOUSTON_LAT = 29.749907
 HOUSTON_LONG = -95.358421
 
+OCCUPIED_HEATING_STPT = 20  # 68F
+OCCUPIED_COOLING_STPT = 18.33  # 65F
+UNOCCUPIED_HEATING_STPT = 29.44  # 85F
+UNOCCUPIED_COOLING_STPT = 25.56  # 78F
+
 
 def default_building():
     """Make an office building representative of a default building.
@@ -52,8 +57,8 @@ def default_building():
         ach_infl=ach_infil,
         ventilation_efficiency=0,
         thermal_capacitance_per_floor_area=165000,
-        t_set_heating=21,
-        t_set_cooling=26,
+        t_set_heating=OCCUPIED_HEATING_STPT,
+        t_set_cooling=OCCUPIED_COOLING_STPT,
         max_cooling_energy_per_floor_area=-464338 / single_floor_area / 3,
         max_heating_energy_per_floor_area=220516 / single_floor_area / 3,
         heating_supply_system=supply_system.HeatPumpAir,
@@ -78,3 +83,7 @@ def default_building():
     ]
 
     return zone, windows, HOUSTON_LAT, HOUSTON_LONG
+
+
+def comfort_temperature(t_outdoor):
+    return 17.8 + 0.31 * t_outdoor

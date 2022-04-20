@@ -1,11 +1,13 @@
 from collections import defaultdict
 import datetime as dt
+import os
 
 from gym import Env, spaces
-import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
+import pandas as pd
 
+from deep_hvac import logger
+from deep_hvac.building import make_default_building, comfort_temperature
 from deep_hvac.util import sun_position
 
 
@@ -13,22 +15,19 @@ class SimConfig():
 
     def __init__(self, episode_length=24 * 30,
                  terminate_on_discomfort=False,
-                 discomfort_penalty=100, t_upper_allowed=26,
-                 t_lower_allowed=20):
+                 discomfort_penalty=100):
         """
         :param int episode_length: Number of hours for each episode
         :param bool terminate_on_discomfort: Whether to terminate the
             episode if temperature bounds are violated during occupant
             hours
-        :param float discomfort_penalty: Penalty per degree for violating
+        :param float discomfort_penalty: Penalty multiplier for violating
             temperature bounds
         """
 
         self.episode_length = episode_length
         self.terminate_on_discomfort = terminate_on_discomfort
         self.discomfort_penalty = discomfort_penalty
-        self.t_lower_allowed = t_lower_allowed
-        self.t_upper_allowed = t_upper_allowed
 
 
 class SimEnv(Env):
@@ -36,6 +35,7 @@ class SimEnv(Env):
 
     :ivar int time: Hour of the year
     """
+    occupancy_lookahead = 3
 
     def __init__(self, prices, weather, agent, coords, zone, windows,
                  config=None, expert_performance=None):
@@ -71,16 +71,24 @@ class SimEnv(Env):
         self.windows = windows
         self.expert_performance = expert_performance
         self.config = config
+        self.random = np.random.default_rng(0)
 
         self.reset()
 
-    def reset(self, time=5024):
+    def reset(self, time=None):
         """Reset the simulator to a certain time of the year.
 
         :param int time:
         """
-        # reset time to a time in the year
-        # TODO: Reset to a random time that guarantees a full episode
+        if time is None:
+            # Reset to midnight starting at a random month.
+            month = self.random.integers(1, 13)
+            timestamp_start = self.get_timestamp(0)
+            year = timestamp_start.year
+            tzinfo = timestamp_start.tzinfo
+            timestamp = dt.datetime(year, month, 1, 0, 0, 0, tzinfo=tzinfo)
+            time = self.get_index(timestamp)
+
         self.time = time
         self.timestep = 0
 
@@ -90,7 +98,7 @@ class SimEnv(Env):
         self.zone.t_set_heating = 20
         self.zone.t_set_cooling = 26
 
-        # reset the temperature of the building mass to 
+        # reset the temperature of the building mass
         self.t_m_prev = (self.zone.t_set_heating + self.zone.t_set_cooling) / 2
         self.step_bulk()
 
@@ -109,6 +117,7 @@ class SimEnv(Env):
         """
 
         timestamp, cur_weather = self.get_timestamp_and_weather()
+        current_weather = self.get_weather(self.time)
 
         altitude, azimuth = sun_position(
             self.latitude, self.longitude, timestamp)
@@ -205,15 +214,28 @@ class SimEnv(Env):
             - t_air (inside air tmperature) for t-1
             - hour for t
             - weekday for t
+            - electricity price for t - 1
+            - direct normal radiation for t
+            - diffuse horizontal radiation for t
+            - building occupancy boolean (1 or 0) for hours t to
+                occupancy_lookahead
         """
+        weather = self.get_weather(self.time)
+        occupancy = []
+        for ahead in range(self.occupancy_lookahead):
+            occupancy.append(self.is_occupied(self.time + ahead))
+
         return [
             self.zone.t_set_heating,
             self.zone.t_set_cooling,
             self.get_outdoor_temperature(self.time),
             self.zone.t_air,
             self.get_timestamp(self.time).hour,
-            self.get_timestamp(self.time).weekday()
-        ]
+            self.get_timestamp(self.time).weekday(),
+            self.get_avg_hourly_price(self.get_timestamp(self.time - 1)),
+            weather['DNI_Wm2'],
+            weather['DHI_Wm2'],
+        ] + occupancy
 
     def get_obs(self):
         return self.get_state()
@@ -231,16 +253,30 @@ class SimEnv(Env):
             'Settlement Point Price'].mean() / 1000
 
     def hour_of_year(self, timestamp):
-        """Get integer corresponding to the hour of the year for `timestamp`"""
-        pass
+        """Get integer corresponding to the hour of the year for `timestamp`
+
+        :return int:
+        """
+        year = timestamp.year
+        start = dt.datetime(year, 1, 1, 0, 0, 0, tzinfo=timestamp.tzinfo)
+        return int((start - timestamp).total_seconds() / 3600)
+
+    def get_weather(self, time):
+        """Return Series of weather data."""
+        if not isinstance(time, int):
+            time = self.index(time)
+        return self.weather.iloc[self.time]
 
     def get_timestamp_and_weather(self):
         """
-        Get timestamp represented by `self.time`
+        Get timestamp and weather data represented by `self.time`
 
         :return: timestamp, weather data.
         """
         return self.get_timestamp(self.time), self.weather.iloc[self.time]
+
+    def get_index(self, timestamp):
+        return self.hour_of_year(timestamp)
 
     def get_timestamp(self, index):
         return self.weather.index[index]
@@ -265,24 +301,37 @@ class SimEnv(Env):
         reward_from_discomfort = 0
         discomf_terminate = False
         if self.is_occupied(timestamp):
-            if t_air < self.config.t_lower_allowed or \
-                    t_air > self.config.t_upper_allowed:
-                deviation = min(
-                    np.abs(t_air - self.config.t_lower_allowed),
-                    np.abs(t_air - self.config.t_upper_allowed)
-                )
-                reward_from_discomfort = (
-                    deviation * self.config.discomfort_penalty)
-                if self.config.terminate_on_discomfort:
-                    discomf_terminate = True
+            discomf_score = self.comfort_penalty(timestamp, t_air)
+            reward_from_discomfort += (
+                discomf_score * self.config.discomfort_penalty
+            )
+            if discomf_score == 1 and self.config.terminate_on_discomfort:
+                discomf_terminate = True
         reward = reward_from_expert_improvement + reward_from_discomfort
         info = {
             'reward': reward, 'discomfort_termination': discomf_terminate,
             'reward_from_expert_improvement': reward_from_expert_improvement,
-            'reward_from_discomfort': reward_from_discomfort}
+            'reward_from_discomfort': reward_from_discomfort,
+            'discomfort_score': discomf_score}
         return reward, info
 
+    def comfort_penalty(self, timestamp, t_air):
+        """Calculate comfort penalty. Is 0.5 if if >2.5 degrees away from
+        comfort temperature and 1 if >3.5 degrees away from comfort
+        temperature."""
+        outdoor = self.get_outdoor_temperature(self.get_index(timestamp))
+        t_comf = comfort_temperature(outdoor)
+        deviation = np.abs(t_air - t_comf)
+        if deviation < 2.5:
+            return 0
+        elif deviation < 3.5:
+            return 0.5
+        else:
+            return 1
+
     def is_occupied(self, timestamp):
+        if isinstance(timestamp, int):
+            timestamp = self.get_timestamp(timestamp)
         is_weekday = timestamp.weekday() < 5
         hour = timestamp.hour
 
@@ -293,3 +342,40 @@ class SimEnv(Env):
             return 0
         else:
             return self.expert_performance.loc[timestamp, 'cost']
+
+
+def make_default_env(episode_length=24 * 30, terminate_on_discomfort=True,
+                     discomfort_penalty=100):
+    config = SimConfig(
+        episode_length=episode_length,
+        terminate_on_discomfort=terminate_on_discomfort,
+        discomfort_penalty=discomfort_penalty)
+    datadir = os.path.join(
+        os.path.split(os.path.abspath(__file__))[0],
+        '..', 'data'
+    )
+    logger.debug("Loading NSRDB data...")
+    nsrdb = NsrdbReader(os.path.join(datadir, '1704559_29.72_-95.35_2018.csv'))
+    logger.debug("Finished loading NSRDB data.")
+    logger.debug("Loading Houston price data...")
+    ercot = pd.read_pickle(os.path.join(
+        datadir, 'houston-2018-prices.pickle'))
+    logger.debug("Finished loading price data.")
+    # Run the "best case" agent.
+
+
+def make_testing_env(episode_length=24 * 30, terminate_on_discomfort=False,
+                     discomfort_penalty=100):
+    """Create 2019 Houston dataset as testing environment."""
+    datadir = os.path.join(
+        os.path.split(os.path.abspath(__file__))[0],
+        '..', 'data'
+    )
+    logger.debug("Loading NSRDB data...")
+    nsrdb = NsrdbReader(os.path.join(datadir, '1704559_29.72_-95.35_2019.csv'))
+    logger.debug("Finished loading NSRDB data.")
+    logger.debug("Loading Houston price data...")
+    ercot = ErcotPriceReader(os.path.join(
+        datadir, 'ercot-2019-rt.xlsx'))
+    logger.debug("Finished loading price data.")
+    # TODO: finish.
