@@ -1,6 +1,9 @@
-import os, sys
 from collections import defaultdict
+import os
+import sys
+
 import numpy as np
+import pandas as pd
 
 from plot_tf_log import plot_curves
 
@@ -39,12 +42,14 @@ if __name__ == "__main__":
     env = make_default_env()
 
     # run steps and collect results on naive_agent
-    print("Running naive agent")
-    naive_results = naive_agent()
+    # print("Running naive agent")
+    # naive_results = naive_agent()
 
     # run steps and collect results on ppo_agent
     agent_ppo, _ =  make_ppo_agent(max_steps = 20000)
     ppo_results = get_results(agent_ppo, env, time=6048)
+
+    pd.to_pickle(ppo_results, 'ppo_results.pickle')
 
     price_dict = {'PPO Price':[[i for i in range(1024)], list(np.mean(np.array(ppo_results['price']), axis=0))],
                   'Naive Price': [[i for i in range(1024)], list(np.mean(np.array(naive_results['price']), axis=0))]}
