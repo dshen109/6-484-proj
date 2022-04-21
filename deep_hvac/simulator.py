@@ -7,8 +7,9 @@ import numpy as np
 import pandas as pd
 
 from deep_hvac import logger
-from deep_hvac.building import make_default_building, comfort_temperature
-from deep_hvac.util import sun_position
+from deep_hvac import building
+from deep_hvac.building import default_building, comfort_temperature
+from deep_hvac.util import sun_position, NsrdbReader
 
 
 class SimConfig():
@@ -53,16 +54,16 @@ class SimEnv(Env):
         super(SimEnv, self).__init__()
 
         inf = float('inf')
+        # todo: Configure observation space based on the lookahead configs
         self.observation_space = spaces.Box(
-            low=np.array([-inf, -inf, -inf, -inf, -inf, -inf]),
-            high=np.array([inf, inf, inf, inf, inf, inf]),
+            low=np.array([-inf] * 12),
+            high=np.array([inf] * 12),
             dtype=np.float32)
         # First element is heating stpt, second element is cooling stpt.
         self.action_space = spaces.Box(low=np.array([10, 10]),
                                        high=np.array([40, 40]),
                                        dtype=np.float32)
 
-        self.action_space
         self.prices = prices
         self.weather = weather
         self.agent = agent
@@ -117,7 +118,6 @@ class SimEnv(Env):
         """
 
         timestamp, cur_weather = self.get_timestamp_and_weather()
-        current_weather = self.get_weather(self.time)
 
         altitude, azimuth = sun_position(
             self.latitude, self.longitude, timestamp)
@@ -169,6 +169,7 @@ class SimEnv(Env):
                      'electricity_out', 't_air'):
             self.results[attr].append(getattr(self.zone, attr))
         self.results['t_inside'].append(self.zone.t_air)
+        self.results['t_bulk'].append(self.t_m_prev)
         self.results['timestamp'].append(timestamp)
         self.results['t_outside'].append(t_out)
 
@@ -200,6 +201,7 @@ class SimEnv(Env):
         info['success'] = False
 
         terminate = (
+            self.time == 365 * 24 or
             info['discomfort_termination'] or
             self.timestep >= self.config.episode_length)
 
@@ -223,7 +225,11 @@ class SimEnv(Env):
         weather = self.get_weather(self.time)
         occupancy = []
         for ahead in range(self.occupancy_lookahead):
-            occupancy.append(self.is_occupied(self.time + ahead))
+            try:
+                occupancy.append(int(self.is_occupied(self.time + ahead)))
+            except IndexError:
+                # exceeded end of simulation, pad with zeros.
+                occupancy.append(0)
 
         return [
             self.zone.t_set_heating,
@@ -300,6 +306,7 @@ class SimEnv(Env):
         # penalty only applies if it is a weekday and between 8am - 6pm
         reward_from_discomfort = 0
         discomf_terminate = False
+        discomf_score = 0
         if self.is_occupied(timestamp):
             discomf_score = self.comfort_penalty(timestamp, t_air)
             reward_from_discomfort += (
@@ -322,9 +329,9 @@ class SimEnv(Env):
         outdoor = self.get_outdoor_temperature(self.get_index(timestamp))
         t_comf = comfort_temperature(outdoor)
         deviation = np.abs(t_air - t_comf)
-        if deviation < 2.5:
+        if deviation <= 2.5:
             return 0
-        elif deviation < 3.5:
+        elif deviation <= 3.5:
             return 0.5
         else:
             return 1
@@ -335,47 +342,10 @@ class SimEnv(Env):
         is_weekday = timestamp.weekday() < 5
         hour = timestamp.hour
 
-        return is_weekday and (hour >= 8 or hour <= 6 + 12)
+        return is_weekday and (hour >= 8 and hour <= 6 + 12)
 
     def expert_price_paid(self, timestamp):
         if self.expert_performance is None:
             return 0
         else:
             return self.expert_performance.loc[timestamp, 'cost']
-
-
-def make_default_env(episode_length=24 * 30, terminate_on_discomfort=True,
-                     discomfort_penalty=100):
-    config = SimConfig(
-        episode_length=episode_length,
-        terminate_on_discomfort=terminate_on_discomfort,
-        discomfort_penalty=discomfort_penalty)
-    datadir = os.path.join(
-        os.path.split(os.path.abspath(__file__))[0],
-        '..', 'data'
-    )
-    logger.debug("Loading NSRDB data...")
-    nsrdb = NsrdbReader(os.path.join(datadir, '1704559_29.72_-95.35_2018.csv'))
-    logger.debug("Finished loading NSRDB data.")
-    logger.debug("Loading Houston price data...")
-    ercot = pd.read_pickle(os.path.join(
-        datadir, 'houston-2018-prices.pickle'))
-    logger.debug("Finished loading price data.")
-    # Run the "best case" agent.
-
-
-def make_testing_env(episode_length=24 * 30, terminate_on_discomfort=False,
-                     discomfort_penalty=100):
-    """Create 2019 Houston dataset as testing environment."""
-    datadir = os.path.join(
-        os.path.split(os.path.abspath(__file__))[0],
-        '..', 'data'
-    )
-    logger.debug("Loading NSRDB data...")
-    nsrdb = NsrdbReader(os.path.join(datadir, '1704559_29.72_-95.35_2019.csv'))
-    logger.debug("Finished loading NSRDB data.")
-    logger.debug("Loading Houston price data...")
-    ercot = ErcotPriceReader(os.path.join(
-        datadir, 'ercot-2019-rt.xlsx'))
-    logger.debug("Finished loading price data.")
-    # TODO: finish.
