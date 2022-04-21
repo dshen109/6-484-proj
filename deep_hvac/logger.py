@@ -1,7 +1,7 @@
 import logging
 import sys
 
-root = logging.getLogger()
+root = logging.getLogger('deep_hvac')
 root.setLevel(logging.DEBUG)
 
 handler = logging.StreamHandler(sys.stdout)
@@ -11,7 +11,7 @@ handler.setFormatter(formatter)
 root.addHandler(handler)
 
 
-logger = logging.getLogger()
+logger = logging.getLogger('deep_hvac')
 
 
 def debug(*args, **kwargs):
@@ -19,4 +19,4 @@ def debug(*args, **kwargs):
 
 
 def log(*args, **kwargs):
-    logger.log(*args, **kwargs)
+    logger.info(*args, **kwargs)
