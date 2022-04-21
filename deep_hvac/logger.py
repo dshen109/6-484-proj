@@ -1,7 +1,7 @@
 import logging
 import sys
 
-root = logging.getLogger()
+root = logging.getLogger('deep_hvac')
 root.setLevel(logging.DEBUG)
 
 handler = logging.StreamHandler(sys.stdout)
