@@ -18,7 +18,7 @@ class SimConfig():
                  terminate_on_discomfort=False,
                  discomfort_penalty=100):
         """
-        :param int episode_length: Number of hours for each episode
+        :param int episode_length: Maximum number of hours for each episode
         :param bool terminate_on_discomfort: Whether to terminate the
             episode if temperature bounds are violated during occupant
             hours
@@ -309,7 +309,7 @@ class SimEnv(Env):
         discomf_score = 0
         if self.is_occupied(timestamp):
             discomf_score = self.comfort_penalty(timestamp, t_air)
-            reward_from_discomfort += (
+            reward_from_discomfort -= (
                 discomf_score * self.config.discomfort_penalty
             )
             if discomf_score == 1 and self.config.terminate_on_discomfort:
@@ -323,18 +323,22 @@ class SimEnv(Env):
         return reward, info
 
     def comfort_penalty(self, timestamp, t_air):
-        """Calculate comfort penalty. Is 0.5 if if >2.5 degrees away from
-        comfort temperature and 1 if >3.5 degrees away from comfort
-        temperature."""
+        """
+        Calculate ASHRAE comfort penalty.
+
+        Is interpolated between [0.5, 1] if >2.5 or <3.5 degrees away from
+        comfort temperature and |diff - 2.5| if >3.5 degrees away from comfort
+        temperature.
+        """
         outdoor = self.get_outdoor_temperature(self.get_index(timestamp))
         t_comf = comfort_temperature(outdoor)
         deviation = np.abs(t_air - t_comf)
         if deviation <= 2.5:
             return 0
         elif deviation <= 3.5:
-            return 0.5
+            return np.interp(deviation, [2.5, 3.5], [0.5, 1])
         else:
-            return 1
+            return deviation - 2.5
 
     def is_occupied(self, timestamp):
         if isinstance(timestamp, int):
