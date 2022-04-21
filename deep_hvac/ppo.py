@@ -1,7 +1,6 @@
 from easyrl.agents.ppo_agent import PPOAgent
 from easyrl.configs import cfg
 from easyrl.configs import set_config
-from easyrl.configs.command_line import cfg_from_cmd
 from easyrl.engine.ppo_engine import PPOEngine
 from easyrl.models.categorical_policy import CategoricalPolicy
 from easyrl.models.diag_gaussian_policy import DiagGaussianPolicy
@@ -10,12 +9,12 @@ from easyrl.models.value_net import ValueNet
 from easyrl.runner.nstep_runner import EpisodicRunner
 from easyrl.utils.common import set_random_seed
 from easyrl.utils.gym_util import make_vec_env
-from easyrl.utils.common import load_from_json
 
 import torch
 from torch import nn
 from pathlib import Path
 import gym
+
 
 def train_ppo(env_name='DefaultBuilding-v0', max_steps=100000):
     set_config('ppo')
