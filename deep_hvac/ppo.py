@@ -16,13 +16,20 @@ from pathlib import Path
 import gym
 
 
-def train_ppo(env_name='DefaultBuilding-v0', max_steps=100000):
+def train_ppo(env_name='DefaultBuilding-v0', max_steps=100000,
+              policy_lr=3e-4, value_lr=1e-3, gae_lambda=0.95,
+              rew_discount=0.99):
     set_config('ppo')
     cfg.alg.num_envs = 1
 
     cfg.alg.episode_steps = 1024
     cfg.alg.log_interval = 1
     cfg.alg.eval_interval = 20
+
+    cfg.alg.policy_lr = policy_lr
+    cfg.alg.value_lr = value_lr
+    cfg.alg.gae_lambda = gae_lambda
+    cfg.alg.rew_discount = rew_discount
 
     cfg.alg.max_steps = max_steps
     cfg.alg.device = 'cuda' if torch.cuda.is_available() else 'cpu'
