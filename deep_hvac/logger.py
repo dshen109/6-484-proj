@@ -11,7 +11,7 @@ handler.setFormatter(formatter)
 root.addHandler(handler)
 
 
-logger = logging.getLogger()
+logger = logging.getLogger('')
 
 
 def debug(*args, **kwargs):
@@ -19,4 +19,4 @@ def debug(*args, **kwargs):
 
 
 def log(*args, **kwargs):
-    logger.log(*args, **kwargs)
+    logger.info(*args, **kwargs)
