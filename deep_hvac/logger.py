@@ -11,7 +11,7 @@ handler.setFormatter(formatter)
 root.addHandler(handler)
 
 
-logger = logging.getLogger('')
+logger = logging.getLogger('deep_hvac')
 
 
 def debug(*args, **kwargs):
