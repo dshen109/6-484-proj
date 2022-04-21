@@ -9,16 +9,21 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 
-def make_ppo_agent(max_steps=100000):
+def make_ppo_agent(max_steps=100000, policy_lr=3e-4, value_lr=1e-3,
+                   gae_lambda=0.95, rew_discount=0.99):
     random.seed(12)
-    return train_ppo(env_name='DefaultBuilding-v0', max_steps=max_steps)
+    return train_ppo(
+        env_name='DefaultBuilding-v0', max_steps=max_steps,
+        policy_lr=policy_lr, value_lr=value_lr, gae_lambda=gae_lambda,
+        rew_discount=rew_discount)
 
 
 if __name__ == "__main__":
     logger.log("Making env")
     env = make_default_env(expert_performance='data/results-expert.pickle')
     logger.log("Starting PPO training")
-    ppo_agent, save_dir = make_ppo_agent(max_steps=1e5)
+    ppo_agent, save_dir = make_ppo_agent(
+        max_steps=5e5, policy_lr=1e-2, value_lr=1e-1)
     logger.log("Finished PPO training")
 
     ppo_results = get_results(ppo_agent, env, time=0)
