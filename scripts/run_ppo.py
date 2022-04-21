@@ -15,12 +15,13 @@ def make_ppo_agent(max_steps=100000):
 
 
 if __name__ == "__main__":
+    logger.log("Making env")
     env = make_default_env(expert_performance='data/results-expert.pickle')
-    ppo_agent, save_dir = make_ppo_agent(max_steps=1e4)
-
     logger.log("Starting PPO training")
-    ppo_results = get_results(ppo_agent, env, time=0)
+    ppo_agent, save_dir = make_ppo_agent(max_steps=1e5)
     logger.log("Finished PPO training")
+
+    ppo_results = get_results(ppo_agent, env, time=0)
 
     pd.to_pickle(ppo_results, 'ppo_results.pickle')
 
