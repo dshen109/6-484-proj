@@ -25,7 +25,10 @@ def run_episode(agent, env, episode_steps, time=0):
 
 
 def get_results(agent, env, episode_steps=30 * 24,
-                max_steps=21600, time=0):
+                max_steps=7200, time=0):
+    """
+    :param int time: Starting time for result plotting.
+    """
 
     results = defaultdict(list)
     total_steps = 0
@@ -45,7 +48,7 @@ def update_results(results, ep_results):
 
 
 def make_default_env(episode_length=24 * 30, terminate_on_discomfort=True,
-                     discomfort_penalty=100, env_name='DefaultBuilding-v0',
+                     discomfort_penalty=1e4, env_name='DefaultBuilding-v0',
                      expert_performance=None):
     """
     Register the default environment
@@ -115,6 +118,7 @@ def make_default_env(episode_length=24 * 30, terminate_on_discomfort=True,
 def make_testing_env(episode_length=24 * 30, terminate_on_discomfort=False,
                      discomfort_penalty=100):
     """Create 2019 Houston dataset as testing environment."""
+    # TODO: Finish.
     datadir = os.path.join(
         os.path.split(os.path.abspath(__file__))[0],
         '..', 'data'

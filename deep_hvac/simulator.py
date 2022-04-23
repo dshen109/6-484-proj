@@ -16,9 +16,9 @@ class SimConfig():
 
     def __init__(self, episode_length=24 * 30,
                  terminate_on_discomfort=False,
-                 discomfort_penalty=100):
+                 discomfort_penalty=100, action_bound_penalty=1e3):
         """
-        :param int episode_length: Number of hours for each episode
+        :param int episode_length: Maximum number of hours for each episode
         :param bool terminate_on_discomfort: Whether to terminate the
             episode if temperature bounds are violated during occupant
             hours
@@ -29,6 +29,7 @@ class SimConfig():
         self.episode_length = episode_length
         self.terminate_on_discomfort = terminate_on_discomfort
         self.discomfort_penalty = discomfort_penalty
+        self.action_bound_penalty = action_bound_penalty
 
 
 class SimEnv(Env):
@@ -116,7 +117,6 @@ class SimEnv(Env):
             - timestamp that was updated
             - t_out outdoor air temperature.
         """
-
         timestamp, cur_weather = self.get_timestamp_and_weather()
 
         altitude, azimuth = sun_position(
@@ -153,6 +153,8 @@ class SimEnv(Env):
         """
         Step from time t to t + 1, action is applied to time t and returns
             state corresponding to t + 1
+
+        If the action is outside the action, space, terminate the episode.
 
         :param Array action: new setpoint for heating and
             cooling temperature
@@ -192,7 +194,13 @@ class SimEnv(Env):
         # t_set_heating, t_set_cooling, t_air is for the t time
         reward, info = self.get_reward(
             timestamp, electricity_cost, self.zone.t_air)
+
+        action_bound_violation = False
+        if not self.action_space.contains(action):
+            reward -= self.config.action_bound_penalty
+            action_bound_violation = True
         self.ep_reward += reward
+
         self.results['reward'].append(reward)
         self.results['set_heating'].append(self.zone.t_set_heating)
         self.results['set_cooling'].append(self.zone.t_set_cooling)
@@ -203,6 +211,7 @@ class SimEnv(Env):
         terminate = (
             self.time == 365 * 24 or
             info['discomfort_termination'] or
+            action_bound_violation or
             self.timestep >= self.config.episode_length)
 
         return self.get_state(), reward, terminate, info
@@ -213,16 +222,20 @@ class SimEnv(Env):
             - t_set_heating for t-1
             - t_set_cooling for t-1
             - t_out (outside air temperature) for t
-            - t_air (inside air tmperature) for t-1
+            - direct normal radiation for t
+            - diffuse horizontal radiation for t
+            - t_out (outside air temperature) for t - 1
+            - direct normal radiation for t - 1
+            - diffuse horizontal radiation for t - 1
+            - t_air (inside air temperature) for t-1
             - hour for t
             - weekday for t
             - electricity price for t - 1
-            - direct normal radiation for t
-            - diffuse horizontal radiation for t
             - building occupancy boolean (1 or 0) for hours t to
                 occupancy_lookahead
         """
         weather = self.get_weather(self.time)
+        weather_previous = self.get_weather(self.time - 1)
         occupancy = []
         for ahead in range(self.occupancy_lookahead):
             try:
@@ -235,12 +248,15 @@ class SimEnv(Env):
             self.zone.t_set_heating,
             self.zone.t_set_cooling,
             self.get_outdoor_temperature(self.time),
+            weather['DNI_Wm2'],
+            weather['DHI_Wm2'],
+            weather_previous['Temperature'],
+            weather_previous['DNI_Wm2'],
+            weather_previous['DHI_Wm2'],
             self.zone.t_air,
             self.get_timestamp(self.time).hour,
             self.get_timestamp(self.time).weekday(),
             self.get_avg_hourly_price(self.get_timestamp(self.time - 1)),
-            weather['DNI_Wm2'],
-            weather['DHI_Wm2'],
         ] + occupancy
 
     def get_obs(self):
@@ -309,7 +325,7 @@ class SimEnv(Env):
         discomf_score = 0
         if self.is_occupied(timestamp):
             discomf_score = self.comfort_penalty(timestamp, t_air)
-            reward_from_discomfort += (
+            reward_from_discomfort -= (
                 discomf_score * self.config.discomfort_penalty
             )
             if discomf_score == 1 and self.config.terminate_on_discomfort:
@@ -323,18 +339,22 @@ class SimEnv(Env):
         return reward, info
 
     def comfort_penalty(self, timestamp, t_air):
-        """Calculate comfort penalty. Is 0.5 if if >2.5 degrees away from
-        comfort temperature and 1 if >3.5 degrees away from comfort
-        temperature."""
+        """
+        Calculate ASHRAE comfort penalty.
+
+        Is interpolated between [0.5, 1] if >2.5 or <3.5 degrees away from
+        comfort temperature and |diff - 2.5| if >3.5 degrees away from comfort
+        temperature.
+        """
         outdoor = self.get_outdoor_temperature(self.get_index(timestamp))
         t_comf = comfort_temperature(outdoor)
         deviation = np.abs(t_air - t_comf)
         if deviation <= 2.5:
             return 0
         elif deviation <= 3.5:
-            return 0.5
+            return np.interp(deviation, [2.5, 3.5], [0.5, 1])
         else:
-            return 1
+            return deviation - 2.5
 
     def is_occupied(self, timestamp):
         if isinstance(timestamp, int):
