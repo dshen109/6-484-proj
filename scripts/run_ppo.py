@@ -23,8 +23,9 @@ if __name__ == "__main__":
     env = make_default_env(expert_performance='data/results-expert.pickle')
     logger.log("Starting PPO training")
     ppo_agent, save_dir = make_ppo_agent(
-        max_steps=5e5, policy_lr=1e-2, value_lr=1e-1)
+        max_steps=1e5, policy_lr=1e-2, value_lr=1e-1)
     logger.log("Finished PPO training")
+    logger.log(f"Results saved to {save_dir}")
 
     ppo_results = get_results(ppo_agent, env, time=0)
 
