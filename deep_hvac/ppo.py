@@ -20,7 +20,7 @@ import gym
 
 def train_ppo(env_name='DefaultBuilding-v0', max_steps=100000,
               policy_lr=3e-4, value_lr=1e-3, gae_lambda=0.95,
-              rew_discount=0.99, seed=0):
+              rew_discount=0.99, seed=0, save_dir=None):
     """
     Note that the environment name must already be registered before running
     this.
@@ -42,7 +42,7 @@ def train_ppo(env_name='DefaultBuilding-v0', max_steps=100000,
     cfg.alg.device = 'cuda' if torch.cuda.is_available() else 'cpu'
     cfg.alg.env_name = env_name
     cfg.alg.save_dir = Path.cwd().absolute().joinpath('data').as_posix()
-    cfg.alg.save_dir += '/' + env_name
+    cfg.alg.save_dir += '/' + (save_dir or env_name)
 
     setattr(cfg.alg, 'diff_cfg', dict(save_dir=cfg.alg.save_dir))
 
@@ -87,7 +87,7 @@ def load_agent(modelpath, env_name):
     actor = make_actor(
         observation_size=env.observation_space.shape[0],
         action_size=env.envs[0].action_size,
-        categorical=env.envs[0].config.categorical_action)
+        categorical=env.envs[0].config.discrete_action)
     critic = make_critic(env.observation_space.shape[0])
     agent = PPOAgent(actor=actor, critic=critic, env=env)
     agent.load_model(pretrain_model=modelpath)
