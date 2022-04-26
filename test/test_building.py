@@ -1,7 +1,7 @@
 import os
 
 from deep_hvac import building
-from deep_hvac.naive import SimEnv
+from deep_hvac.simulator import SimEnv
 from deep_hvac.util import NsrdbReader
 
 import mock
