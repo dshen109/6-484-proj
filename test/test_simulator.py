@@ -1,3 +1,5 @@
+import datetime as dt
+
 from deep_hvac import simulator
 from deep_hvac.util import NsrdbReader
 from deep_hvac import building
@@ -36,10 +38,17 @@ class TestSim(TestCase):
         state3, _, _, _ = self.env.step(self.action_default)
         timestamps = self.env.results['timestamp']
 
+        # First timestamp should be hour after year starts
+        self.assertEqual(
+            timestamps[0],
+            dt.datetime(timestamps[0].year, 1, 1, 1, 0,
+                        tzinfo=timestamps[0].tzinfo)
+        )
+
         self.array_eq(
             self.env.results['t_outside'],
             self.nsrdb.weather_hourly.iloc[1:3]['Temperature'].values)
 
         self.array_eq(
             self.env.results['electricity_cost'],
-            [0.0651, 0.2122], atol=0.001)
+            [0, 0], atol=0.001)

@@ -22,17 +22,6 @@ def run_episode(agent, env, episode_steps, time=0):
         env.step(action[0])
     return env.results
 
-def get_results(agent, env, episode_steps=1024, max_steps=500000, time=0):
-
-    results = defaultdict(list)
-    total_steps = 0
-
-    while total_steps < max_steps:
-        ep_results = run_episode(agent, env, episode_steps, time=time)
-        update_results(results, ep_results)
-        total_steps += episode_steps
-
-    return results
 
 
 if __name__ == "__main__":

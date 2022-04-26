@@ -1,34 +1,35 @@
 from collections import defaultdict
 import datetime as dt
+import os
 
 from gym import Env, spaces
-import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
+import pandas as pd
 
-from deep_hvac.util import sun_position
+from deep_hvac import logger
+from deep_hvac import building
+from deep_hvac.building import default_building, comfort_temperature
+from deep_hvac.util import sun_position, NsrdbReader
 
 
 class SimConfig():
 
     def __init__(self, episode_length=24 * 30,
                  terminate_on_discomfort=False,
-                 discomfort_penalty=100, t_upper_allowed=26,
-                 t_lower_allowed=20):
+                 discomfort_penalty=100, action_bound_penalty=1e3):
         """
-        :param int episode_length: Number of hours for each episode
+        :param int episode_length: Maximum number of hours for each episode
         :param bool terminate_on_discomfort: Whether to terminate the
             episode if temperature bounds are violated during occupant
             hours
-        :param float discomfort_penalty: Penalty per degree for violating
+        :param float discomfort_penalty: Penalty multiplier for violating
             temperature bounds
         """
 
         self.episode_length = episode_length
         self.terminate_on_discomfort = terminate_on_discomfort
         self.discomfort_penalty = discomfort_penalty
-        self.t_lower_allowed = t_lower_allowed
-        self.t_upper_allowed = t_upper_allowed
+        self.action_bound_penalty = action_bound_penalty
 
 
 class SimEnv(Env):
@@ -36,6 +37,7 @@ class SimEnv(Env):
 
     :ivar int time: Hour of the year
     """
+    occupancy_lookahead = 3
 
     def __init__(self, prices, weather, agent, coords, zone, windows,
                  config=None, expert_performance=None):
@@ -53,16 +55,16 @@ class SimEnv(Env):
         super(SimEnv, self).__init__()
 
         inf = float('inf')
+        # todo: Configure observation space based on the lookahead configs
         self.observation_space = spaces.Box(
-            low=np.array([-inf, -inf, -inf, -inf, -inf, -inf]),
-            high=np.array([inf, inf, inf, inf, inf, inf]),
+            low=np.array([-inf] * 12),
+            high=np.array([inf] * 12),
             dtype=np.float32)
         # First element is heating stpt, second element is cooling stpt.
         self.action_space = spaces.Box(low=np.array([10, 10]),
                                        high=np.array([40, 40]),
                                        dtype=np.float32)
 
-        self.action_space
         self.prices = prices
         self.weather = weather
         self.agent = agent
@@ -71,16 +73,24 @@ class SimEnv(Env):
         self.windows = windows
         self.expert_performance = expert_performance
         self.config = config
+        self.random = np.random.default_rng(0)
 
         self.reset()
 
-    def reset(self, time=5024):
+    def reset(self, time=None):
         """Reset the simulator to a certain time of the year.
 
         :param int time:
         """
-        # reset time to a time in the year
-        # TODO: Reset to a random time that guarantees a full episode
+        if time is None:
+            # Reset to midnight starting at a random month.
+            month = self.random.integers(1, 13)
+            timestamp_start = self.get_timestamp(0)
+            year = timestamp_start.year
+            tzinfo = timestamp_start.tzinfo
+            timestamp = dt.datetime(year, month, 1, 0, 0, 0, tzinfo=tzinfo)
+            time = self.get_index(timestamp)
+
         self.time = time
         self.timestep = 0
 
@@ -90,7 +100,7 @@ class SimEnv(Env):
         self.zone.t_set_heating = 20
         self.zone.t_set_cooling = 26
 
-        # reset the temperature of the building mass to 
+        # reset the temperature of the building mass
         self.t_m_prev = (self.zone.t_set_heating + self.zone.t_set_cooling) / 2
         self.step_bulk()
         timestamp, cur_weather = self.get_timestamp_and_weather()
@@ -116,7 +126,6 @@ class SimEnv(Env):
             - timestamp that was updated
             - t_out outdoor air temperature.
         """
-
         timestamp, cur_weather = self.get_timestamp_and_weather()
 
         altitude, azimuth = sun_position(
@@ -154,6 +163,8 @@ class SimEnv(Env):
         Step from time t to t + 1, action is applied to time t and returns
             state corresponding to t + 1
 
+        If the action is outside the action, space, terminate the episode.
+
         :param Array action: new setpoint for heating and
             cooling temperature
         :return: state, reward, done, info
@@ -169,6 +180,7 @@ class SimEnv(Env):
                      'electricity_out', 't_air'):
             self.results[attr].append(getattr(self.zone, attr))
         self.results['t_inside'].append(self.zone.t_air)
+        self.results['t_bulk'].append(self.t_m_prev)
         self.results['timestamp'].append(timestamp)
         self.results['t_outside'].append(t_out)
 
@@ -197,7 +209,13 @@ class SimEnv(Env):
         # t_set_heating, t_set_cooling, t_air is for the t time
         reward, info = self.get_reward(
             timestamp, electricity_cost, self.zone.t_air)
+
+        action_bound_violation = False
+        if not self.action_space.contains(action):
+            reward -= self.config.action_bound_penalty
+            action_bound_violation = True
         self.ep_reward += reward
+
         self.results['reward'].append(reward)
         self.results['set_heating'].append(self.zone.t_set_heating)
         self.results['set_cooling'].append(self.zone.t_set_cooling)
@@ -206,7 +224,9 @@ class SimEnv(Env):
         info['success'] = False
 
         terminate = (
+            self.time == 365 * 24 or
             info['discomfort_termination'] or
+            action_bound_violation or
             self.timestep >= self.config.episode_length)
 
         return self.get_state(), reward, terminate, info
@@ -217,18 +237,42 @@ class SimEnv(Env):
             - t_set_heating for t-1
             - t_set_cooling for t-1
             - t_out (outside air temperature) for t
-            - t_air (inside air tmperature) for t-1
+            - direct normal radiation for t
+            - diffuse horizontal radiation for t
+            - t_out (outside air temperature) for t - 1
+            - direct normal radiation for t - 1
+            - diffuse horizontal radiation for t - 1
+            - t_air (inside air temperature) for t-1
             - hour for t
             - weekday for t
+            - electricity price for t - 1
+            - building occupancy boolean (1 or 0) for hours t to
+                occupancy_lookahead
         """
+        weather = self.get_weather(self.time)
+        weather_previous = self.get_weather(self.time - 1)
+        occupancy = []
+        for ahead in range(self.occupancy_lookahead):
+            try:
+                occupancy.append(int(self.is_occupied(self.time + ahead)))
+            except IndexError:
+                # exceeded end of simulation, pad with zeros.
+                occupancy.append(0)
+
         return [
             self.zone.t_set_heating,
             self.zone.t_set_cooling,
             self.get_outdoor_temperature(self.time),
+            weather['DNI_Wm2'],
+            weather['DHI_Wm2'],
+            weather_previous['Temperature'],
+            weather_previous['DNI_Wm2'],
+            weather_previous['DHI_Wm2'],
             self.zone.t_air,
             self.get_timestamp(self.time).hour,
-            self.get_timestamp(self.time).weekday()
-        ]
+            self.get_timestamp(self.time).weekday(),
+            self.get_avg_hourly_price(self.get_timestamp(self.time - 1)),
+        ] + occupancy
 
     def get_obs(self):
         return self.get_state()
@@ -246,16 +290,30 @@ class SimEnv(Env):
             'Settlement Point Price'].mean() / 1000
 
     def hour_of_year(self, timestamp):
-        """Get integer corresponding to the hour of the year for `timestamp`"""
-        pass
+        """Get integer corresponding to the hour of the year for `timestamp`
+
+        :return int:
+        """
+        year = timestamp.year
+        start = dt.datetime(year, 1, 1, 0, 0, 0, tzinfo=timestamp.tzinfo)
+        return int((start - timestamp).total_seconds() / 3600)
+
+    def get_weather(self, time):
+        """Return Series of weather data."""
+        if not isinstance(time, int):
+            time = self.index(time)
+        return self.weather.iloc[self.time]
 
     def get_timestamp_and_weather(self):
         """
-        Get timestamp represented by `self.time`
+        Get timestamp and weather data represented by `self.time`
 
         :return: timestamp, weather data.
         """
         return self.get_timestamp(self.time), self.weather.iloc[self.time]
+
+    def get_index(self, timestamp):
+        return self.hour_of_year(timestamp)
 
     def get_timestamp(self, index):
         return self.weather.index[index]
@@ -279,29 +337,47 @@ class SimEnv(Env):
         # penalty only applies if it is a weekday and between 8am - 6pm
         reward_from_discomfort = 0
         discomf_terminate = False
+        discomf_score = 0
         if self.is_occupied(timestamp):
-            if t_air < self.config.t_lower_allowed or \
-                    t_air > self.config.t_upper_allowed:
-                deviation = min(
-                    np.abs(t_air - self.config.t_lower_allowed),
-                    np.abs(t_air - self.config.t_upper_allowed)
-                )
-                reward_from_discomfort = (
-                    deviation * self.config.discomfort_penalty)
-                if self.config.terminate_on_discomfort:
-                    discomf_terminate = True
+            discomf_score = self.comfort_penalty(timestamp, t_air)
+            reward_from_discomfort -= (
+                discomf_score * self.config.discomfort_penalty
+            )
+            if discomf_score == 1 and self.config.terminate_on_discomfort:
+                discomf_terminate = True
         reward = reward_from_expert_improvement + reward_from_discomfort
         info = {
             'reward': reward, 'discomfort_termination': discomf_terminate,
             'reward_from_expert_improvement': reward_from_expert_improvement,
-            'reward_from_discomfort': reward_from_discomfort}
+            'reward_from_discomfort': reward_from_discomfort,
+            'discomfort_score': discomf_score}
         return reward, info
 
+    def comfort_penalty(self, timestamp, t_air):
+        """
+        Calculate ASHRAE comfort penalty.
+
+        Is interpolated between [0.5, 1] if >2.5 or <3.5 degrees away from
+        comfort temperature and |diff - 2.5| if >3.5 degrees away from comfort
+        temperature.
+        """
+        outdoor = self.get_outdoor_temperature(self.get_index(timestamp))
+        t_comf = comfort_temperature(outdoor)
+        deviation = np.abs(t_air - t_comf)
+        if deviation <= 2.5:
+            return 0
+        elif deviation <= 3.5:
+            return np.interp(deviation, [2.5, 3.5], [0.5, 1])
+        else:
+            return deviation - 2.5
+
     def is_occupied(self, timestamp):
+        if isinstance(timestamp, int):
+            timestamp = self.get_timestamp(timestamp)
         is_weekday = timestamp.weekday() < 5
         hour = timestamp.hour
 
-        return is_weekday and (hour >= 8 or hour <= 6 + 12)
+        return is_weekday and (hour >= 8 and hour <= 6 + 12)
 
     def expert_price_paid(self, timestamp):
         if self.expert_performance is None:

@@ -1,11 +1,13 @@
 import datetime
 from pathlib import Path
 
+from deep_hvac import logger
+
 import pandas as pd
 from pysolar.solar import get_position
 import pytz
-
-from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
+from tensorboard.backend.event_processing.event_accumulator \
+    import EventAccumulator
 
 
 class ErcotPriceReader:
@@ -117,7 +119,7 @@ def read_tf_log(log_dir):
         steps = [x.step for x in scalar_success]
         scalar_return = event_acc.Scalars('train/episode_return/mean')
         returns = [x.value for x in scalar_return]
-    except:
-        return None
+    except Exception as e:
+        logger.log(str(e))
+        return None, None, None
     return steps, returns, success_rate
-

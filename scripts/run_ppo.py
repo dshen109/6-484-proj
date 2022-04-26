@@ -1,64 +1,45 @@
-import os, sys
-import pandas as pd
-from gym.envs.registration import registry, register
 import random
 
-sim_dir = os.path.join(
-        os.path.split(os.path.abspath(__file__))[0],
-        '..', 'rc-building-sim'
-    )
-sys.path.insert(1, sim_dir)
-from rc_simulator.building_physics import Zone
-from rc_simulator.radiation import Window
+from deep_hvac import logger
+from deep_hvac.ppo import train_ppo
+from deep_hvac.runner import make_default_env, get_results
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
 
 
-hvac_dir = os.path.join(
-        os.path.split(os.path.abspath(__file__))[0],
-        '..', 'deep_hvac'
-    )
-sys.path.insert(2, hvac_dir)
-from util import NsrdbReader, ErcotPriceReader
-from simulator import SimEnv
-from ppo import train_ppo
-
-def make_ppo_agent(max_steps=100000):
-
+def make_ppo_agent(max_steps=100000, policy_lr=3e-4, value_lr=1e-3,
+                   gae_lambda=0.95, rew_discount=0.99):
     random.seed(12)
+    return train_ppo(
+        env_name='DefaultBuilding-v0', max_steps=max_steps,
+        policy_lr=policy_lr, value_lr=value_lr, gae_lambda=gae_lambda,
+        rew_discount=rew_discount)
 
-    datadir = os.path.join(
-        os.path.split(os.path.abspath(__file__))[0],
-        '..', 'data'
-    )
-    nsrdb = NsrdbReader(os.path.join(datadir, '1704559_29.72_-95.35_2018.csv'))
-    ercot = ErcotPriceReader(os.path.join(
-        datadir, 'ercot-2018-rt.xlsx'
-    ))
-
-    window_area = 1
-    office = Zone(window_area=window_area)
-    south_window = Window(azimuth_tilt=0, altitude_tilt=90, area=window_area)
-
-    latitude, longitude = 29.749907, -95.358421
-
-    env_args = {
-        'prices': ercot.prices,
-        'weather': nsrdb.weather_hourly,
-        'agent': None,
-        'coords': [latitude, longitude],
-        'zone': office,
-        'windows': [south_window]
-    }
-
-    env_name = 'DefaultBuilding-v0'
-    if env_name in registry.env_specs:
-        del registry.env_specs[env_name]
-    register(
-        id=env_name,
-        entry_point=f'simulator:SimEnv',
-        kwargs=env_args
-    )
-
-    return train_ppo(env_name='DefaultBuilding-v0', max_steps=max_steps)
 
 if __name__ == "__main__":
-    make_ppo_agent(max_steps=600000)
+    logger.log("Making env")
+    env = make_default_env(expert_performance='data/results-expert.pickle')
+    logger.log("Starting PPO training")
+    ppo_agent, save_dir = make_ppo_agent(
+        max_steps=1e5, policy_lr=1e-2, value_lr=1e-1)
+    logger.log("Finished PPO training")
+    logger.log(f"Results saved to {save_dir}")
+
+    ppo_results = get_results(ppo_agent, env, time=0)
+
+    pd.to_pickle(ppo_results, 'ppo_results.pickle')
+
+    times = ppo_results['timestamp'][0]
+    t_int = np.array(ppo_results['t_inside']).mean(axis=0)
+    t_outside = np.array(ppo_results['t_outside']).mean(axis=0)
+    t_cool_stpt = np.array(ppo_results['set_cooling']).mean(axis=0)
+    t_heat_stpt = np.array(ppo_results['set_heating']).mean(axis=0)
+
+    plt.plot(times, t_int, label='t_inside')
+    plt.plot(times, t_outside, label='t_outside')
+    plt.plot(times, t_cool_stpt, linestyle='dotted', label='cooling setpoint')
+    plt.plot(times, t_heat_stpt, linestyle='dotted', label='heating setpoint')
+    plt.legend()
+    plt.show()
