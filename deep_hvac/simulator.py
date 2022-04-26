@@ -1,22 +1,21 @@
 from collections import defaultdict
 import datetime as dt
-import os
 
 from gym import Env, spaces
 import numpy as np
-import pandas as pd
 
-from deep_hvac import logger
-from deep_hvac import building
-from deep_hvac.building import default_building, comfort_temperature
-from deep_hvac.util import sun_position, NsrdbReader
+from deep_hvac.agent import NaiveAgent, AshraeComfortAgent
+from deep_hvac.spaces.multi_discrete import MultiDiscrete
+from deep_hvac.building import comfort_temperature
+from deep_hvac.util import sun_position
 
 
 class SimConfig():
 
     def __init__(self, episode_length=24 * 30,
                  terminate_on_discomfort=False,
-                 discomfort_penalty=100, action_bound_penalty=1e3):
+                 discomfort_penalty=100, action_bound_penalty=1e3,
+                 discrete_action=False):
         """
         :param int episode_length: Maximum number of hours for each episode
         :param bool terminate_on_discomfort: Whether to terminate the
@@ -24,12 +23,13 @@ class SimConfig():
             hours
         :param float discomfort_penalty: Penalty multiplier for violating
             temperature bounds
+        :param bool shift_action: Shift action by some amount.
         """
-
         self.episode_length = episode_length
         self.terminate_on_discomfort = terminate_on_discomfort
         self.discomfort_penalty = discomfort_penalty
         self.action_bound_penalty = action_bound_penalty
+        self.discrete_action = discrete_action
 
 
 class SimEnv(Env):
@@ -38,6 +38,9 @@ class SimEnv(Env):
     :ivar int time: Hour of the year
     """
     occupancy_lookahead = 3
+    # Absolute lower and upper bounds for action
+    t_low = 10
+    t_high = 40
 
     def __init__(self, prices, weather, agent, coords, zone, windows,
                  config=None, expert_performance=None):
@@ -53,18 +56,6 @@ class SimEnv(Env):
             performance, with column 'cost' describing their electricity cost.
         """
         super(SimEnv, self).__init__()
-
-        inf = float('inf')
-        # todo: Configure observation space based on the lookahead configs
-        self.observation_space = spaces.Box(
-            low=np.array([-inf] * 12),
-            high=np.array([inf] * 12),
-            dtype=np.float32)
-        # First element is heating stpt, second element is cooling stpt.
-        self.action_space = spaces.Box(low=np.array([10, 10]),
-                                       high=np.array([40, 40]),
-                                       dtype=np.float32)
-
         self.prices = prices
         self.weather = weather
         self.agent = agent
@@ -74,6 +65,33 @@ class SimEnv(Env):
         self.expert_performance = expert_performance
         self.config = config
         self.random = np.random.default_rng(0)
+
+        inf = float('inf')
+        # todo: Configure observation space based on the lookahead configs
+        self.observation_space = spaces.Box(
+            low=np.array([-inf] * 17),
+            high=np.array([inf] * 17),
+            dtype=np.float32)
+        # First element is heating stpt, second element is cooling stpt.
+        if not self.config.discrete_action:
+            self.action_space = spaces.Box(
+                low=np.array([self.t_low, self.t_low]),
+                high=np.array([self.t_high, self.t_high]),
+                dtype=np.float32)
+        else:
+            span = self.t_high - self.t_low + 1
+            self.action_space = MultiDiscrete(
+                nvec=[span, span], starts=[self.t_low, self.t_low]
+            )
+
+        if isinstance(agent, (NaiveAgent, AshraeComfortAgent)):
+            self.action_shift = 0
+        elif self.config.discrete_action:
+            self.action_shift = 0
+        else:
+            # Add a shift to continuous actions so it doesn't start the
+            # thermostat at 0
+            self.action_shift = 21
 
         self.reset()
 
@@ -99,6 +117,9 @@ class SimEnv(Env):
 
         self.zone.t_set_heating = 20
         self.zone.t_set_cooling = 26
+
+        self.t_set_heating_prev = self.zone.t_set_heating
+        self.t_set_cooling_prev = self.zone.t_set_cooling
 
         # reset the temperature of the building mass
         self.t_m_prev = (self.zone.t_set_heating + self.zone.t_set_cooling) / 2
@@ -156,12 +177,20 @@ class SimEnv(Env):
 
         If the action is outside the action, space, terminate the episode.
 
-        :param Array action: new setpoint for heating and
-            cooling temperature
+        :param Array action: new setpoint for heating and cooling temperature
         :return: state, reward, done, info
         """
-        self.zone.t_set_heating = action[0]
-        self.zone.t_set_cooling = action[1]
+        self.t_set_heating_prev = self.zone.t_set_heating
+        self.t_set_cooling_prev = self.zone.t_set_cooling
+
+        if np.isscalar(action):
+            action = self.discrete_action_to_setpoints(action)
+
+        t_set_heating = action[0] + self.action_shift
+        t_set_cooling = action[1] + self.action_shift
+
+        self.zone.t_set_heating = t_set_heating
+        self.zone.t_set_cooling = t_set_cooling
 
         # timestamp is the t time
         timestamp, t_out = self.step_bulk()
@@ -196,7 +225,10 @@ class SimEnv(Env):
             timestamp, electricity_cost, self.zone.t_air)
 
         action_bound_violation = False
-        if not self.action_space.contains(action):
+        # Having heating setpoint higher than cooling setpoint means the
+        # heating and cooling could simultaneously turn on.
+        if not self.action_space.contains(action) or \
+                t_set_heating > t_set_cooling:
             reward -= self.config.action_bound_penalty
             action_bound_violation = True
         self.ep_reward += reward
@@ -247,6 +279,8 @@ class SimEnv(Env):
         return [
             self.zone.t_set_heating,
             self.zone.t_set_cooling,
+            self.t_set_heating_prev,
+            self.t_set_cooling_prev,
             self.get_outdoor_temperature(self.time),
             weather['DNI_Wm2'],
             weather['DHI_Wm2'],
@@ -369,3 +403,28 @@ class SimEnv(Env):
             return 0
         else:
             return self.expert_performance.loc[timestamp, 'cost']
+
+    def discrete_action_to_setpoints(self, action):
+        """Given a scalar discrete action, translate it to the setpoint.
+
+        :return: Tuple of heating and cooling.
+        """
+        span = self.t_high - self.t_low + 1
+        action_max = span ** 2
+        if action < 0 or action >= action_max:
+            raise ValueError(
+                f"Discrete action of {action} cannot be mapped to setpoints")
+        heating_shift = action // span
+        cooling_shift = action % span
+        return (self.t_low + heating_shift, self.t_low + cooling_shift)
+
+    @property
+    def action_size(self):
+        """
+        Number of action elements if continuous action space or number of
+        categorical actions if discrete.
+        """
+        if self.config.discrete_action:
+            return (self.t_high - self.t_low + 1) ** 2
+        else:
+            return 2
