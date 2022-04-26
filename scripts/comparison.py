@@ -46,7 +46,8 @@ if __name__ == "__main__":
     # naive_results = naive_agent()
 
     # run steps and collect results on ppo_agent
-    agent_ppo, _ =  make_ppo_agent(max_steps = 20000)
+
+    agent_ppo, _ = make_ppo_agent(max_steps=1000000)
     ppo_results = get_results(agent_ppo, env, time=6048)
 
     pd.to_pickle(ppo_results, 'ppo_results.pickle')
