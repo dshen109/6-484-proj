@@ -48,18 +48,24 @@ def update_results(results, ep_results):
 
 
 def make_default_env(episode_length=24 * 30, terminate_on_discomfort=True,
-                     discomfort_penalty=1e4, env_name='DefaultBuilding-v0',
+                     discomfort_penalty=1e4, discrete_action=True,
                      expert_performance=None):
     """
-    Register the default environment
+    Register a default environment
 
     :return Env: Registered environment
     """
+    if discrete_action:
+        env_name = 'DefaultBuilding-v0-action-discrete'
+    else:
+        env_name = 'DefaultBuilding-v0-action-continuous'
     logger.debug(f"Creating default environment {env_name}.")
     config = simulator.SimConfig(
         episode_length=episode_length,
         terminate_on_discomfort=terminate_on_discomfort,
-        discomfort_penalty=discomfort_penalty)
+        discomfort_penalty=discomfort_penalty,
+        discrete_action=discrete_action
+    )
     datadir = os.path.join(
         os.path.split(os.path.abspath(__file__))[0],
         '..', 'data'
@@ -112,7 +118,7 @@ def make_default_env(episode_length=24 * 30, terminate_on_discomfort=True,
     register(
         id=env_name, entry_point='deep_hvac.simulator:SimEnv', kwargs=env_args
     )
-    return make_vec_env(env_name, 1, 0).envs[0]
+    return make_vec_env(env_name, 1, 0).envs[0], env_name
 
 
 def make_testing_env(episode_length=24 * 30, terminate_on_discomfort=False,

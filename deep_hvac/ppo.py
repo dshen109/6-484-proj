@@ -1,9 +1,11 @@
-from deep_hvac.models.diag_gaussian_policy import DiagGaussianPolicy
+from deep_hvac.spaces import MultiDiscrete
 
 from easyrl.agents.ppo_agent import PPOAgent
 from easyrl.configs import cfg
 from easyrl.configs import set_config
 from easyrl.engine.ppo_engine import PPOEngine
+from easyrl.models.categorical_policy import CategoricalPolicy
+from easyrl.models.diag_gaussian_policy import DiagGaussianPolicy
 from easyrl.models.mlp import MLP
 from easyrl.models.value_net import ValueNet
 from easyrl.runner.nstep_runner import EpisodicRunner
@@ -18,9 +20,10 @@ import gym
 
 def train_ppo(env_name='DefaultBuilding-v0', max_steps=100000,
               policy_lr=3e-4, value_lr=1e-3, gae_lambda=0.95,
-              rew_discount=0.99, seed=0, initial_bias=21):
+              rew_discount=0.99, seed=0):
     """
-    :param int initial_bias: Bias adder for actor output to start training.
+    Note that the environment name must already be registered before running
+    this.
     """
     set_config('ppo')
     cfg.alg.num_envs = 1
@@ -56,18 +59,14 @@ def train_ppo(env_name='DefaultBuilding-v0', max_steps=100000,
     env.reset()
     ob_size = env.observation_space.shape[0]
 
-    if isinstance(env.action_space, gym.spaces.Discrete):
-        # act_size = env.action_space.n
-        # actor = CategoricalPolicy(actor_body,
-        #                           in_features=64,
-        #                           action_dim=act_size)
-        raise TypeError("Can only handle continuous action space")
+    if isinstance(env.action_space, MultiDiscrete):
+        action_categorical = True
     elif isinstance(env.action_space, gym.spaces.Box):
-        act_size = env.action_space.shape[0]
-        actor = make_actor(ob_size, act_size,
-                           initial_bias=torch.ones(act_size) * initial_bias)
+        action_categorical = False
     else:
         raise TypeError(f'Unknown action space type: {env.action_space}')
+    actor = make_actor(ob_size, env.envs[0].action_size,
+                       categorical=action_categorical)
 
     critic = make_critic(ob_size)
     agent = PPOAgent(actor=actor, critic=critic, env=env)
@@ -87,7 +86,8 @@ def load_agent(modelpath, env_name):
 
     actor = make_actor(
         observation_size=env.observation_space.shape[0],
-        action_size=env.action_space.shape[0])
+        action_size=env.envs[0].action_size,
+        categorical=env.envs[0].config.categorical_action)
     critic = make_critic(env.observation_space.shape[0])
     agent = PPOAgent(actor=actor, critic=critic, env=env)
     agent.load_model(pretrain_model=modelpath)
@@ -103,16 +103,25 @@ def make_critic(observation_size, in_features=64):
     return ValueNet(body, in_features=in_features)
 
 
-def make_actor(observation_size, action_size, initial_bias=None):
+def make_actor(observation_size, action_size,
+               categorical=False):
     body = MLP(input_size=observation_size,
                hidden_sizes=[64, 64],
                output_size=64,
                hidden_act=nn.Tanh,
                output_act=nn.Tanh)
-    return DiagGaussianPolicy(
-        body_net=body,
-        in_features=64,
-        action_dim=action_size,
-        tanh_on_dist=cfg.alg.tanh_on_dist,
-        std_cond_in=cfg.alg.std_cond_in,
-        initial_bias=initial_bias)
+    if not categorical:
+        return DiagGaussianPolicy(
+            body_net=body,
+            in_features=64,
+            action_dim=action_size,
+            tanh_on_dist=cfg.alg.tanh_on_dist,
+            std_cond_in=cfg.alg.std_cond_in
+        )
+    else:
+        return CategoricalPolicy(
+            body_net=body,
+            in_features=64,
+            action_dim=action_size
+        )
+
