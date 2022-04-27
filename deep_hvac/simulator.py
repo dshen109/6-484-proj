@@ -37,6 +37,8 @@ class SimConfig():
         :param bool price_indicator_confidence: Probability that the price
             indicator gives the correct value
         """
+        # Add config to output kWh of electricity used at previous timestep
+        # for MPC purposes
         self.episode_length = episode_length
         self.terminate_on_discomfort = terminate_on_discomfort
         self.discomfort_penalty = discomfort_penalty
@@ -57,6 +59,31 @@ class SimEnv(Env):
     # Absolute lower and upper bounds for action
     t_low = 10
     t_high = 40
+
+    state_idx = {
+        'heating_setpoint': 0,
+        'cooling_setpoint': 1,
+        'heating_setpoint_previous': 2,
+        'cooling_setpoint_previous': 3,
+        'outdoor_temperature': 4,
+        'dni': 5,
+        'dhi': 6,
+        'outdoor_temperature_previous': 7,
+        'dni_previous': 8,
+        'dhi_previous': 9,
+        'indoor_temperature': 10,
+        'indoor_temperature_previous': 11,
+        'hour': 12,
+        'day': 13,
+        'month': 14,
+        'weekday': 15,
+        'price_previous': 16,
+        'electricity_consumed': 17,
+        'price_indicator': 18,
+        'occupancy_ahead_0': 19,
+        'occupancy_ahead_1': 20,
+        'occupancy_ahead_2': 21
+    }
 
     def __init__(self, prices, weather, agent, coords, zone, windows,
                  config=None, expert_performance=None):
@@ -85,8 +112,8 @@ class SimEnv(Env):
         inf = float('inf')
         # todo: Configure observation space based on the lookahead configs
         self.observation_space = spaces.Box(
-            low=np.array([-inf] * 17),
-            high=np.array([inf] * 17),
+            low=np.array([-inf] * len(self.state_idx)),
+            high=np.array([inf] * len(self.state_idx)),
             dtype=np.float32)
         # First element is heating stpt, second element is cooling stpt.
         if not self.config.discrete_action:
@@ -135,15 +162,24 @@ class SimEnv(Env):
         self.zone.t_set_heating = 20
         self.zone.t_set_cooling = 26
 
+        outdoor_air_temperature = self.get_outdoor_temperature(self.time)
+
+        if outdoor_air_temperature > self.zone.t_set_cooling:
+            t_inside = self.zone.t_set_cooling
+        elif outdoor_air_temperature < self.zone.t_set_heating:
+            t_inside = self.zone.t_set_heating
+        else:
+            t_inside = outdoor_air_temperature
+
+        self.zone.t_air = t_inside
+
+        self.t_air_prev = t_inside
         self.t_set_heating_prev = self.zone.t_set_heating
         self.t_set_cooling_prev = self.zone.t_set_cooling
 
         # reset the temperature of the building mass to mean of outside and
         # inside as initial approximation
-        self.t_m_prev = (
-            (self.zone.t_set_heating + self.zone.t_set_cooling) / 2 +
-            self.get_outdoor_temperature(self.time)
-        ) / 2
+        self.t_m_prev = (outdoor_air_temperature + t_inside) / 2
         self.step_bulk()
 
         # reset the episodes results
@@ -172,19 +208,27 @@ class SimEnv(Env):
                 normal_direct_radiation=cur_weather['DNI_Wm2'],
                 horizontal_diffuse_radiation=cur_weather['DHI_Wm2']
             )
-
         t_out = self.get_outdoor_temperature(self.time)
 
         if self.is_occupied(timestamp):
             occupant_gains = 30 * 100
         else:
             occupant_gains = 0
+
+        self.t_air_prev = self.zone.t_air
+
         self.zone.solve_energy(
             internal_gains=occupant_gains,
             solar_gains=sum([window.solar_gains for window in self.windows]),
             t_out=t_out,
             t_m_prev=self.t_m_prev
         )
+        # Electricity consumed in Watts
+        self.electricity_consumed = (
+            self.zone.heating_sys_electricity +
+            self.zone.cooling_sys_electricity
+        )
+
         self.t_m_prev = self.zone.t_m_next
 
         self.time += 1
@@ -267,20 +311,28 @@ class SimEnv(Env):
         return self.get_state(), reward, terminate, info
 
     def get_state(self):
-        """If self.time is at index t, returns:
+        """
+        If self.time is at index t, returns:
 
-            - t_set_heating for t-1
-            - t_set_cooling for t-1
+            - t_set_heating for t - 1
+            - t_set_cooling for t - 1
+            - t_set_heating for t - 2
+            - t_set_cooling for t - 2
             - t_out (outside air temperature) for t
             - direct normal radiation for t
             - diffuse horizontal radiation for t
             - t_out (outside air temperature) for t - 1
             - direct normal radiation for t - 1
             - diffuse horizontal radiation for t - 1
-            - t_air (inside air temperature) for t-1
+            - t_air (inside air temperature) for t - 1
+            - t_air (inside air temperature) for t - 2
             - hour for t
+            - day of the month for t
+            - month for t
             - weekday for t
-            - electricity price for t - 1
+            - mean electricity price for t - 1
+            - electricity consumed (W) in t - 1
+            - price indicator for t as a function of t - 1
             - building occupancy boolean (1 or 0) for hours t to
                 occupancy_lookahead
         """
@@ -306,9 +358,14 @@ class SimEnv(Env):
             weather_previous['DNI_Wm2'],
             weather_previous['DHI_Wm2'],
             self.zone.t_air,
+            self.t_air_prev,
             self.get_timestamp(self.time).hour,
+            self.get_timestamp(self.time).day,
+            self.get_timestamp(self.time).month,
             self.get_timestamp(self.time).weekday(),
             self.get_avg_hourly_price(self.get_timestamp(self.time - 1)),
+            self.electricity_consumed,
+            self.price_indicator(self.time)
         ] + occupancy
 
     def get_obs(self):
@@ -325,6 +382,10 @@ class SimEnv(Env):
         return self.prices.loc[
             timestamp:timestamp + dt.timedelta(minutes=59),
             'Settlement Point Price'].mean() / 1000
+
+    def price_indicator(self, timestamp):
+        # TODO: Finish.
+        return 0
 
     def hour_of_year(self, timestamp):
         """Get integer corresponding to the hour of the year for `timestamp`
@@ -356,7 +417,10 @@ class SimEnv(Env):
         return self.weather.index[index]
 
     def get_outdoor_temperature(self, index):
-        """Get outdoor air temperature at time *index*"""
+        """Get outdoor air temperature at time *index*
+
+        :param int index:
+        """
         return self.weather.iloc[index].loc['Temperature']
 
     def get_reward(self, timestamp, electricity_cost, t_air,
@@ -366,7 +430,7 @@ class SimEnv(Env):
 
         :param Timestamp timestamp:
         :param float electricity_cost: Total cost paid for electricity
-        :param float t_air: Air temperature
+        :param float t_air: Interior air temperature
         """
         # If we have an expert, the reward is how much better we did than the
         # expert
@@ -426,6 +490,8 @@ class SimEnv(Env):
         temperature.
 
         A score of 0 is good.
+
+        :param float t_air: Indoor air temperature
         """
         outdoor = self.get_outdoor_temperature(self.get_index(timestamp))
         t_comf = comfort_temperature(outdoor)
