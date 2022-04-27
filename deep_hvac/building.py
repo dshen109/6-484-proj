@@ -3,6 +3,8 @@ from rc_simulator.building_physics import Zone
 from rc_simulator.emission_system import AirConditioning
 from rc_simulator.radiation import Window
 
+import numpy as np
+
 
 AZIMUTH_SOUTH = 0
 AZIMUTH_WEST = 90
@@ -29,7 +31,8 @@ UNOCCUPIED_COOLING_STPT = 29.44  # 85F
 
 
 def default_building():
-    """Make an office building representative of a default building.
+    """
+    Make an office building representative of a default building.
 
     It is intended to emulate a DOE reference medium office in zone 2A
     (Houston), post 1980
@@ -87,4 +90,6 @@ def default_building():
 
 
 def comfort_temperature(t_outdoor):
+    if isinstance(t_outdoor, (list, tuple)):
+        t_outdoor = np.array(t_outdoor)
     return 17.8 + 0.31 * t_outdoor
