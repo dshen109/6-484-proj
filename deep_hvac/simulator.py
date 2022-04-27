@@ -15,7 +15,8 @@ class SimConfig():
     def __init__(self, episode_length=24 * 30,
                  terminate_on_discomfort=False,
                  discomfort_penalty=100, action_bound_penalty=1e3,
-                 discrete_action=False):
+                 discrete_action=False, action_change_penalty=1,
+                 comfort_praise=0.1):
         """
         :param int episode_length: Maximum number of hours for each episode
         :param bool terminate_on_discomfort: Whether to terminate the
@@ -24,12 +25,19 @@ class SimConfig():
         :param float discomfort_penalty: Penalty multiplier for violating
             temperature bounds
         :param bool shift_action: Shift action by some amount.
+        :param int action_change_penalty: Demerit applied to reward for
+            changing the HVAC setpoint by more than 0.5 degrees in each
+            transition (positive)
+        :param float comfort_praise: Reward applied for keeping all the
+            occupants comfortable
         """
         self.episode_length = episode_length
         self.terminate_on_discomfort = terminate_on_discomfort
         self.discomfort_penalty = discomfort_penalty
         self.action_bound_penalty = action_bound_penalty
         self.discrete_action = discrete_action
+        self.action_change_penalty = action_change_penalty
+        self.comfort_praise = comfort_praise
 
 
 class SimEnv(Env):
@@ -84,7 +92,8 @@ class SimEnv(Env):
                 nvec=[span, span], starts=[self.t_low, self.t_low]
             )
 
-        if isinstance(agent, (NaiveAgent, AshraeComfortAgent)):
+        if isinstance(agent, (NaiveAgent, AshraeComfortAgent)) or \
+                agent is None:
             self.action_shift = 0
         elif self.config.discrete_action:
             self.action_shift = 0
@@ -222,15 +231,11 @@ class SimEnv(Env):
         # t_out, timestamp.hour and weekday are for the t+1 time.
         # t_set_heating, t_set_cooling, t_air is for the t time
         reward, info = self.get_reward(
-            timestamp, electricity_cost, self.zone.t_air)
+            timestamp, electricity_cost, self.zone.t_air, t_set_heating,
+            t_set_cooling, self.t_set_heating_prev, self.t_set_cooling_prev)
 
-        action_bound_violation = False
-        # Having heating setpoint higher than cooling setpoint means the
-        # heating and cooling could simultaneously turn on.
-        if not self.action_space.contains(action) or \
-                t_set_heating > t_set_cooling:
-            reward -= self.config.action_bound_penalty
-            action_bound_violation = True
+        action_bound_violation = info['action_bound_violation']
+
         self.ep_reward += reward
 
         self.results['reward'].append(reward)
@@ -341,35 +346,62 @@ class SimEnv(Env):
         """Get outdoor air temperature at time *index*"""
         return self.weather.iloc[index].loc['Temperature']
 
-    def get_reward(self, timestamp, electricity_cost, t_air):
+    def get_reward(self, timestamp, electricity_cost, t_air,
+                   t_set_heating, t_set_cooling, t_set_heating_prev,
+                   t_set_cooling_prev):
         """Return tuple of reward and info dict.
 
         :param Timestamp timestamp:
         :param float electricity_cost: Total cost paid for electricity
         :param float t_air: Air temperature
-        :param float lam: Air temperature penalty.
         """
         # If we have an expert, the reward is how much better we did than the
         # expert
         reward_from_expert_improvement = (
             self.expert_price_paid(timestamp) - electricity_cost)
-        # penalty only applies if it is a weekday and between 8am - 6pm
+        # discomfort penalty only applies if it is a weekday and between 8am -
+        # 6pm
         reward_from_discomfort = 0
         discomf_terminate = False
         discomf_score = 0
+        reward_from_comfort = 0
+        action_change_reward = 0
+        action_bound_violation_reward = False
+        action_bound_violation = False
+
         if self.is_occupied(timestamp):
             discomf_score = self.comfort_penalty(timestamp, t_air)
             reward_from_discomfort -= (
                 discomf_score * self.config.discomfort_penalty
             )
-            if discomf_score == 1 and self.config.terminate_on_discomfort:
+            if discomf_score >= 1 and self.config.terminate_on_discomfort:
                 discomf_terminate = True
-        reward = reward_from_expert_improvement + reward_from_discomfort
+            if discomf_score == 0:
+                reward_from_comfort += self.config.comfort_praise
+
+        if not self.action_valid(t_set_heating, t_set_cooling):
+            action_bound_violation_reward -= self.config.action_bound_penalty
+            action_bound_violation = True
+
+        if (np.abs(t_set_cooling - t_set_cooling_prev) > 0.5 or
+                np.abs(t_set_heating - t_set_heating_prev) > 0.5):
+            action_change_reward -= self.config.action_change_penalty
+
+        reward = (
+            reward_from_expert_improvement + reward_from_discomfort +
+            reward_from_comfort + action_bound_violation_reward +
+            action_change_reward
+        )
         info = {
             'reward': reward, 'discomfort_termination': discomf_terminate,
             'reward_from_expert_improvement': reward_from_expert_improvement,
             'reward_from_discomfort': reward_from_discomfort,
-            'discomfort_score': discomf_score}
+            'reward_from_comfort': reward_from_comfort,
+            'discomfort_score': discomf_score,
+            'reward_from_action_bound_violation':
+                action_bound_violation_reward,
+            'action_bound_violation': action_bound_violation,
+            'action_change_reward': action_change_reward}
         return reward, info
 
     def comfort_penalty(self, timestamp, t_air):
@@ -379,6 +411,8 @@ class SimEnv(Env):
         Is interpolated between [0.5, 1] if >2.5 or <3.5 degrees away from
         comfort temperature and |diff - 2.5| if >3.5 degrees away from comfort
         temperature.
+
+        A score of 0 is good.
         """
         outdoor = self.get_outdoor_temperature(self.get_index(timestamp))
         t_comf = comfort_temperature(outdoor)
@@ -428,3 +462,9 @@ class SimEnv(Env):
             return (self.t_high - self.t_low + 1) ** 2
         else:
             return 2
+
+    def action_valid(self, t_set_heating, t_set_cooling):
+        """Return true if action is valid."""
+        action = [t_set_heating, t_set_cooling]
+        return self.action_space.contains(action) and \
+            t_set_heating < t_set_cooling
