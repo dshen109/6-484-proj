@@ -25,6 +25,8 @@ if __name__ == "__main__":
                         help='Use discrete action space.')
     parser.add_argument('--max-steps', type=int,
                         help='Maximum number of steps for PPO training.')
+    parser.add_argument('--plot', action='store_true',
+                        help='Show plots at end of agent behavior.')
 
     args = parser.parse_args()
 
@@ -41,17 +43,21 @@ if __name__ == "__main__":
 
     ppo_results = get_results(ppo_agent, env, time=0)
 
+    # TODO: give description of results in filename
     pd.to_pickle(ppo_results, 'ppo_results.pickle')
 
-    times = ppo_results['timestamp'][0]
-    t_int = np.array(ppo_results['t_inside']).mean(axis=0)
-    t_outside = np.array(ppo_results['t_outside']).mean(axis=0)
-    t_cool_stpt = np.array(ppo_results['set_cooling']).mean(axis=0)
-    t_heat_stpt = np.array(ppo_results['set_heating']).mean(axis=0)
+    if args.plot:
+        times = ppo_results['timestamp'][0]
+        t_int = np.array(ppo_results['t_inside']).mean(axis=0)
+        t_outside = np.array(ppo_results['t_outside']).mean(axis=0)
+        t_cool_stpt = np.array(ppo_results['set_cooling']).mean(axis=0)
+        t_heat_stpt = np.array(ppo_results['set_heating']).mean(axis=0)
 
-    plt.plot(times, t_int, label='t_inside')
-    plt.plot(times, t_outside, label='t_outside')
-    plt.plot(times, t_cool_stpt, linestyle='dotted', label='cooling setpoint')
-    plt.plot(times, t_heat_stpt, linestyle='dotted', label='heating setpoint')
-    plt.legend()
-    plt.show()
+        plt.plot(times, t_int, label='t_inside')
+        plt.plot(times, t_outside, label='t_outside')
+        plt.plot(times, t_cool_stpt, linestyle='dotted',
+                 label='cooling setpoint')
+        plt.plot(times, t_heat_stpt, linestyle='dotted',
+                 label='heating setpoint')
+        plt.legend()
+        plt.show()

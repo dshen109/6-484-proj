@@ -14,9 +14,10 @@ class SimConfig():
 
     def __init__(self, episode_length=24 * 30,
                  terminate_on_discomfort=False,
-                 discomfort_penalty=100, action_bound_penalty=1e3,
+                 discomfort_penalty=10, action_bound_penalty=10,
                  discrete_action=False, action_change_penalty=1,
-                 comfort_praise=0.1):
+                 comfort_praise=0.1, price_indicator=False,
+                 price_indicator_confidence=0.6):
         """
         :param int episode_length: Maximum number of hours for each episode
         :param bool terminate_on_discomfort: Whether to terminate the
@@ -30,6 +31,11 @@ class SimConfig():
             transition (positive)
         :param float comfort_praise: Reward applied for keeping all the
             occupants comfortable
+        :param bool price_indicator: Indicator for whether price increases
+            by more than 50%, decreases by more than 50%, or stays the same in
+            the next state.
+        :param bool price_indicator_confidence: Probability that the price
+            indicator gives the correct value
         """
         self.episode_length = episode_length
         self.terminate_on_discomfort = terminate_on_discomfort
@@ -38,6 +44,8 @@ class SimConfig():
         self.discrete_action = discrete_action
         self.action_change_penalty = action_change_penalty
         self.comfort_praise = comfort_praise
+        self.price_indicator = price_indicator
+        self.price_indicator_confidence = price_indicator_confidence
 
 
 class SimEnv(Env):
@@ -130,8 +138,12 @@ class SimEnv(Env):
         self.t_set_heating_prev = self.zone.t_set_heating
         self.t_set_cooling_prev = self.zone.t_set_cooling
 
-        # reset the temperature of the building mass
-        self.t_m_prev = (self.zone.t_set_heating + self.zone.t_set_cooling) / 2
+        # reset the temperature of the building mass to mean of outside and
+        # inside as initial approximation
+        self.t_m_prev = (
+            (self.zone.t_set_heating + self.zone.t_set_cooling) / 2 +
+            self.get_outdoor_temperature(self.time)
+        ) / 2
         self.step_bulk()
 
         # reset the episodes results
