@@ -23,7 +23,7 @@ if __name__ == "__main__":
                         help='PPO training seed')
     parser.add_argument('--discrete', action='store_true',
                         help='Use discrete action space.')
-    parser.add_argument('--max-steps', type=int,
+    parser.add_argument('--max-steps', type=int, default=1e5,
                         help='Maximum number of steps for PPO training.')
     parser.add_argument('--plot', action='store_true',
                         help='Show plots at end of agent behavior.')
@@ -32,7 +32,8 @@ if __name__ == "__main__":
 
     logger.log("Making env...")
     env, env_name = make_default_env(
-        expert_performance='data/results-expert.pickle',
+        # expert_performance='data/results-expert.pickle',
+        expert_performance=None,
         discrete_action=args.discrete)
     logger.log("Starting PPO training")
     ppo_agent, save_dir = make_ppo_agent(
