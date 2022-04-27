@@ -224,6 +224,7 @@ class SimEnv(Env):
         self.results['t_bulk'].append(self.t_m_prev)
         self.results['timestamp'].append(timestamp)
         self.results['t_outside'].append(t_out)
+        self.results['t_comfort'].append(comfort_temperature(t_out))
 
         self.results['solar_gain'].append(
             sum([window.solar_gains for window in self.windows]))
