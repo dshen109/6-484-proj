@@ -57,7 +57,7 @@ def default_building():
         ach_vent=ach_vent,
         ach_infl=ach_infil,
         ventilation_efficiency=0,
-        thermal_capacitance_per_floor_area=165000,
+        thermal_capacitance_per_floor_area=260000,  # "heavy" thermal capacitance
         t_set_heating=OCCUPIED_HEATING_STPT,
         t_set_cooling=OCCUPIED_COOLING_STPT,
         max_cooling_energy_per_floor_area=-464338 / single_floor_area / 3,
