@@ -19,8 +19,12 @@ def run_episode(agent, env, episode_steps, time=0):
     """
     env.reset(time=time)
     for _ in range(episode_steps):
-        action = agent.get_action(env.get_obs())
-        env.step(action[0])
+        action, _ = agent.get_action(env.get_obs())
+        # agent.get_action returns an action for each environment, so just
+        # take the first one
+        if env.config.discrete_action:
+            action = action.item()
+        env.step(action)
     return env.results
 
 
@@ -104,7 +108,6 @@ def make_default_env(episode_length=24 * 30, terminate_on_discomfort=True,
         env_args['expert_performance'] = pd.DataFrame(
             costs, columns=['cost'], index=nsrdb.weather_hourly.index)
         env.results['expert_performance'] = env_args['expert_performance']
-        # pd.to_pickle(env.results, 'data/results-expert.pickle')
     elif isinstance(expert_performance, str):
         expert = pd.read_pickle(expert_performance)
         if not isinstance(expert, pd.DataFrame):

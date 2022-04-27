@@ -7,6 +7,7 @@ from deep_hvac import building
 import numpy as np
 import pandas as pd
 
+import mock
 from unittest import TestCase
 
 
@@ -87,3 +88,18 @@ class TestSim(TestCase):
         )
         self.assertRaises(
             ValueError, lambda: self.env.discrete_action_to_setpoints(9))
+
+    def test_extreme_discomfort(self):
+        self.env.is_occupied = mock.MagicMock(return_value=True)
+        self.env.config.terminate_on_discomfort = True
+        state1, _, terminate, info = self.env.step([15, 16])
+        self.assertTrue(terminate)
+        self.assertAlmostEqual(info['discomfort_score'], 5.327, places=2)
+        self.assertAlmostEqual(
+            info['reward_from_discomfort'], -532.692, places=2)
+
+    def test_action_change_penalty(self):
+        state1, _, _, info = self.env.step([15, 16])
+        state2, _, terminate, info = self.env.step([16, 17])
+        self.assertEqual(info['action_change_reward'],
+                         - self.env.config.action_change_penalty)

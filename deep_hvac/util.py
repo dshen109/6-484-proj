@@ -83,9 +83,9 @@ class NsrdbReader:
 def hour_of_year(timestamp):
     """Calculate the hour of the year.
 
-    The first hour of the year is 1."""
+    The first hour of the year (YYYY-01-01 00:XX) is 0."""
     beginning_of_year = datetime.datetime(
-        timestamp.year, 1, 1, tzinfo=timestamp.tzinfo)
+        timestamp.year, 1, 1, 0, 0, tzinfo=timestamp.tzinfo)
     return (timestamp - beginning_of_year).total_seconds() // 3600
 
 
@@ -112,7 +112,6 @@ def read_tf_log(log_dir):
     log_file = log_files[0]
     event_acc = EventAccumulator(log_file.as_posix())
     event_acc.Reload()
-    tags = event_acc.Tags()
     try:
         scalar_success = event_acc.Scalars('train/episode_success')
         success_rate = [x.value for x in scalar_success]
@@ -123,3 +122,25 @@ def read_tf_log(log_dir):
         logger.log(str(e))
         return None, None, None
     return steps, returns, success_rate
+
+
+def load_expert_performance(expert):
+    if isinstance(expert, str):
+        dictionary = pd.read_pickle(expert)
+    else:
+        dictionary = expert.copy()
+    frame = pd.DataFrame(index=dictionary['timestamp'])
+    indx_len = len(frame.index)
+    for k, v in dictionary.items():
+        if k == 'timestamp':
+            continue
+        if len(v) == indx_len:
+            frame[k] = v
+        else:
+            v_new = v[1:-1]
+            if len(v_new) != indx_len:
+                raise ValueError(
+                    f"Expected {k} to have {indx_len + 2} elements, has "
+                    f"{len(v_new)}")
+            frame[k] = v_new
+    return frame
