@@ -6,10 +6,8 @@ from gym import Env, spaces
 import numpy as np
 import pandas as pd
 
-from deep_hvac import logger
-from deep_hvac import building
-from deep_hvac.building import default_building, comfort_temperature
-from deep_hvac.util import sun_position, NsrdbReader
+from building import default_building, comfort_temperature
+from util import sun_position, NsrdbReader
 
 
 class SimConfig():
@@ -199,12 +197,6 @@ class SimEnv(Env):
         electricity_cost = elec_consumed * price / 1000
         self.results['electricity_cost'].append(electricity_cost)
 
-        self.cur_state = [self.zone.t_set_heating,
-                         self.zone.t_set_cooling,
-                         t_out,
-                         self.zone.t_air,
-                         timestamp.hour,
-                         timestamp.weekday()]
         # t_out, timestamp.hour and weekday are for the t+1 time.
         # t_set_heating, t_set_cooling, t_air is for the t time
         reward, info = self.get_reward(
@@ -229,7 +221,7 @@ class SimEnv(Env):
             action_bound_violation or
             self.timestep >= self.config.episode_length)
 
-        return self.get_state(), reward, terminate, info
+        return self.get_state(), reward, self.time == 365 * 24 or self.timestep >= self.config.episode_length, info
 
     def get_state(self):
         """If self.time is at index t, returns:
@@ -259,6 +251,11 @@ class SimEnv(Env):
                 # exceeded end of simulation, pad with zeros.
                 occupancy.append(0)
 
+        elec_consumed = (
+            self.zone.heating_sys_electricity +
+            self.zone.cooling_sys_electricity
+        )
+
         return [
             self.zone.t_set_heating,
             self.zone.t_set_cooling,
@@ -272,7 +269,8 @@ class SimEnv(Env):
             self.get_timestamp(self.time).hour,
             self.get_timestamp(self.time).weekday(),
             self.get_avg_hourly_price(self.get_timestamp(self.time - 1)),
-        ] + occupancy
+            elec_consumed,
+        ] + occupancy 
 
     def get_obs(self):
         return self.get_state()

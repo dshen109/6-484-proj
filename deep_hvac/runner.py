@@ -1,9 +1,9 @@
 from collections import defaultdict
 import os
 
-from deep_hvac import agent, logger, simulator
-from deep_hvac.building import default_building
-from deep_hvac.util import NsrdbReader
+import agent, logger, simulator
+from building import default_building
+from util import NsrdbReader
 
 from easyrl.utils.gym_util import make_vec_env
 from gym.envs.registration import registry, register
@@ -110,7 +110,7 @@ def make_default_env(episode_length=24 * 30, terminate_on_discomfort=True,
     if env_name in registry.env_specs:
         del registry.env_specs[env_name]
     register(
-        id=env_name, entry_point='deep_hvac.simulator:SimEnv', kwargs=env_args
+        id=env_name, entry_point='simulator:SimEnv', kwargs=env_args
     )
     return make_vec_env(env_name, 1, 0).envs[0]
 

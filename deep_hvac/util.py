@@ -1,7 +1,7 @@
 import datetime
 from pathlib import Path
 
-from deep_hvac import logger
+import logger
 
 import pandas as pd
 from pysolar.solar import get_position

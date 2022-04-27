@@ -1,4 +1,4 @@
-from deep_hvac import building
+import building
 
 from easyrl.agents.base_agent import BaseAgent
 
