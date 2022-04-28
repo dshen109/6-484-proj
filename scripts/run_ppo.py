@@ -37,12 +37,12 @@ if __name__ == "__main__":
         discrete_action=args.discrete)
     logger.log("Starting PPO training")
     ppo_agent, save_dir = make_ppo_agent(
-        max_steps=args.max_steps, policy_lr=1e-3, value_lr=1e-2,
+        max_steps=args.max_steps, policy_lr=1e-1, value_lr=1e0,
         env_name=env_name, seed=args.seed)
     logger.log("Finished PPO training")
-    logger.log(f"Results saved to {save_dir}")
+    logger.log(f"PPO agent saved to {save_dir}")
 
-    ppo_results = get_results(ppo_agent, env, time=0)
+    ppo_results = get_results(ppo_agent, env, time=7 * 30 * 24)
 
     # TODO: give description of results in filename
     pd.to_pickle(ppo_results, 'ppo_results.pickle')
@@ -53,12 +53,14 @@ if __name__ == "__main__":
         t_outside = np.array(ppo_results['t_outside']).mean(axis=0)
         t_cool_stpt = np.array(ppo_results['set_cooling']).mean(axis=0)
         t_heat_stpt = np.array(ppo_results['set_heating']).mean(axis=0)
+        t_bulk = np.array(ppo_results['t_bulk']).mean(axis=0)
 
         plt.plot(times, t_int, label='t_inside')
         plt.plot(times, t_outside, label='t_outside')
-        plt.plot(times, t_cool_stpt, linestyle='dotted',
+        plt.plot(times, t_bulk, label='t_bulk')
+        plt.plot(times, t_cool_stpt, linestyle='dotted', alpha=0.8,
                  label='cooling setpoint')
-        plt.plot(times, t_heat_stpt, linestyle='dotted',
+        plt.plot(times, t_heat_stpt, linestyle='dotted', alpha=0.8,
                  label='heating setpoint')
         plt.legend()
         plt.show()
