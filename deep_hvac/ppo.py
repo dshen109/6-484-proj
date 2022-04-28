@@ -20,7 +20,8 @@ import gym
 
 def train_ppo(env_name='DefaultBuilding-v0', max_steps=100000,
               policy_lr=3e-4, value_lr=1e-3, gae_lambda=0.95,
-              rew_discount=0.99, seed=0, save_dir=None):
+              rew_discount=0.99, seed=0, max_decay_steps=1e6,
+              save_dir=None):
     """
     Note that the environment name must already be registered before running
     this.
@@ -37,6 +38,7 @@ def train_ppo(env_name='DefaultBuilding-v0', max_steps=100000,
     cfg.alg.value_lr = value_lr
     cfg.alg.gae_lambda = gae_lambda
     cfg.alg.rew_discount = rew_discount
+    cfg.alg.max_decay_steps = max_decay_steps
 
     cfg.alg.max_steps = max_steps
     cfg.alg.device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -94,10 +96,10 @@ def load_agent(modelpath, env_name):
     return agent
 
 
-def make_critic(observation_size, in_features=64):
+def make_critic(observation_size, in_features=128):
     body = MLP(input_size=observation_size,
-               hidden_sizes=[64, 64],
-               output_size=64,
+               hidden_sizes=[128, 128],
+               output_size=128,
                hidden_act=nn.Tanh,
                output_act=nn.Tanh)
     return ValueNet(body, in_features=in_features)
@@ -106,14 +108,14 @@ def make_critic(observation_size, in_features=64):
 def make_actor(observation_size, action_size,
                categorical=False):
     body = MLP(input_size=observation_size,
-               hidden_sizes=[64, 64],
-               output_size=64,
+               hidden_sizes=[128, 128],
+               output_size=128,
                hidden_act=nn.Tanh,
                output_act=nn.Tanh)
     if not categorical:
         return DiagGaussianPolicy(
             body_net=body,
-            in_features=64,
+            in_features=128,
             action_dim=action_size,
             tanh_on_dist=cfg.alg.tanh_on_dist,
             std_cond_in=cfg.alg.std_cond_in
@@ -121,7 +123,6 @@ def make_actor(observation_size, action_size,
     else:
         return CategoricalPolicy(
             body_net=body,
-            in_features=64,
+            in_features=128,
             action_dim=action_size
         )
-
