@@ -1,5 +1,6 @@
 from collections import defaultdict
 import datetime as dt
+import itertools
 
 from gym import Env, spaces
 import numpy as np
@@ -14,10 +15,10 @@ class SimConfig():
 
     def __init__(self, episode_length=24 * 30,
                  terminate_on_discomfort=False,
-                 discomfort_penalty=10, action_bound_penalty=10,
-                 discrete_action=False, action_change_penalty=1,
-                 comfort_praise=0.1, price_indicator=False,
-                 price_indicator_confidence=0.6):
+                 discomfort_penalty=1, action_bound_penalty=1000,
+                 discrete_action=False, action_change_penalty=0.001,
+                 comfort_praise=0.01, price_indicator=True,
+                 price_indicator_confidence=0.667):
         """
         :param int episode_length: Maximum number of hours for each episode
         :param bool terminate_on_discomfort: Whether to terminate the
@@ -59,6 +60,8 @@ class SimEnv(Env):
     # Absolute lower and upper bounds for action
     t_low = 10
     t_high = 40
+    # Number of actions if discrete
+    n_actions_discrete = (t_high - t_low) * (t_high - t_low + 1) / 2
 
     state_idx = {
         'heating_setpoint': 0,
@@ -137,6 +140,7 @@ class SimEnv(Env):
             # thermostat at 0
             self.action_shift = 21
 
+        self._map_discrete_actions()
         self.reset()
 
     def reset(self, time=None):
@@ -177,9 +181,9 @@ class SimEnv(Env):
         self.t_set_heating_prev = self.zone.t_set_heating
         self.t_set_cooling_prev = self.zone.t_set_cooling
 
-        # reset the temperature of the building mass to mean of outside and
-        # inside as initial approximation
-        self.t_m_prev = (outdoor_air_temperature + t_inside) / 2
+        # reset the temperature of the building mass to same as inside as
+        # initial approximation
+        self.t_m_prev = t_inside
         self.step_bulk()
 
         # reset the episodes results
@@ -384,8 +388,35 @@ class SimEnv(Env):
             'Settlement Point Price'].mean() / 1000
 
     def price_indicator(self, timestamp):
+        """
+        Give a stochastic indicator for if the price at *timestamp* is higher,
+        lower, or the same as the price at the previous time (`same` is
+        considered to be a difference of less than $15/MWh `or` less than
+        20% difference)
+        """
         # TODO: Finish.
-        return 0
+        if not self.config.price_indicator:
+            return 0
+        price_current = self.get_avg_hourly_price(timestamp)
+        if isinstance(timestamp, int):
+            t_previous = timestamp - 1
+        else:
+            t_previous = timestamp - dt.timedelta(hours=1)
+        price_previous = self.get_avg_hourly_price(t_previous)
+        abs_diff = price_current - price_previous
+        pct_diff = (price_current - price_previous) / price_previous
+
+        is_same = np.abs(abs_diff) < 0.015 or np.abs(pct_diff) < 0.2
+
+        signal_weight = self.config.price_indicator_confidence
+        nonsignal_weight = (1 - signal_weight) / 2
+        if is_same:
+            weights = [nonsignal_weight, signal_weight, nonsignal_weight]
+        elif abs_diff > 0:
+            weights = [nonsignal_weight, nonsignal_weight, signal_weight]
+        else:
+            weights = [signal_weight, nonsignal_weight, nonsignal_weight]
+        return self.random.choice([-1, 0, 1], p=weights)
 
     def hour_of_year(self, timestamp):
         """Get integer corresponding to the hour of the year for `timestamp`
@@ -443,7 +474,7 @@ class SimEnv(Env):
         discomf_score = 0
         reward_from_comfort = 0
         action_change_reward = 0
-        action_bound_violation_reward = False
+        action_bound_violation_reward = 0
         action_bound_violation = False
 
         if self.is_occupied(timestamp):
@@ -522,14 +553,26 @@ class SimEnv(Env):
 
         :return: Tuple of heating and cooling.
         """
-        span = self.t_high - self.t_low + 1
-        action_max = span ** 2
-        if action < 0 or action >= action_max:
-            raise ValueError(
-                f"Discrete action of {action} cannot be mapped to setpoints")
-        heating_shift = action // span
-        cooling_shift = action % span
+        try:
+            if action < 0:
+                raise IndexError
+            heating_shift, cooling_shift = self._discrete_action_map[action]
+        except IndexError:
+            raise IndexError(
+                f"Discrete action {action} not in action range")
+
         return (self.t_low + heating_shift, self.t_low + cooling_shift)
+
+    def _map_discrete_actions(self):
+        """Create action map for discrete actions and cache."""
+        # Tuples of heating, cooling setpoint shifts
+        action_map = []
+        possibilities = np.arange(self.t_high - self.t_low + 1)
+        for heating, cooling in itertools.product(possibilities, repeat=2):
+            if cooling <= heating:
+                continue
+            action_map.append((heating, cooling))
+        self._discrete_action_map = tuple(action_map)
 
     @property
     def action_size(self):
