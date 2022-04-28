@@ -14,11 +14,13 @@ from deep_hvac.util import sun_position
 class SimConfig():
 
     def __init__(self, episode_length=24 * 30,
-                 terminate_on_discomfort=False,
-                 discomfort_penalty=1, action_bound_penalty=1000,
-                 discrete_action=False, action_change_penalty=0.001,
-                 comfort_praise=0.01, price_indicator=True,
-                 price_indicator_confidence=0.667):
+                 terminate_on_discomfort=True,
+                 partial_discomfort_penalty=1,
+                 discomfort_penalty=100, action_bound_penalty=1000,
+                 discrete_action=False, action_change_penalty=0.1,
+                 comfort_praise=1, price_indicator=True,
+                 price_indicator_confidence=0.667, reset_months=None,
+                 terminal_reward_multiplier=10):
         """
         :param int episode_length: Maximum number of hours for each episode
         :param bool terminate_on_discomfort: Whether to terminate the
@@ -37,11 +39,14 @@ class SimConfig():
             the next state.
         :param bool price_indicator_confidence: Probability that the price
             indicator gives the correct value
+        :param Sequence reset_months: If not None, a list of months (with Jan
+            as 1) for simulator to reset to when reset() is called
         """
         # Add config to output kWh of electricity used at previous timestep
         # for MPC purposes
         self.episode_length = episode_length
         self.terminate_on_discomfort = terminate_on_discomfort
+        self.partial_discomfort_penalty = partial_discomfort_penalty
         self.discomfort_penalty = discomfort_penalty
         self.action_bound_penalty = action_bound_penalty
         self.discrete_action = discrete_action
@@ -49,6 +54,8 @@ class SimConfig():
         self.comfort_praise = comfort_praise
         self.price_indicator = price_indicator
         self.price_indicator_confidence = price_indicator_confidence
+        self.reset_months = reset_months
+        self.terminal_reward_multiplier = terminal_reward_multiplier
 
 
 class SimEnv(Env):
@@ -61,7 +68,7 @@ class SimEnv(Env):
     t_low = 10
     t_high = 40
     # Number of actions if discrete
-    n_actions_discrete = (t_high - t_low) * (t_high - t_low + 1) / 2
+    n_actions_discrete = int((t_high - t_low) * (t_high - t_low + 1) / 2)
 
     state_idx = {
         'heating_setpoint': 0,
@@ -150,13 +157,17 @@ class SimEnv(Env):
         """
         if time is None:
             # Reset to midnight starting at a random month.
-            month = self.random.integers(1, 13)
+            if self.config.reset_months:
+                month = self.random.choice(self.config.reset_months)
+            else:
+                month = self.random.integers(1, 13)
             timestamp_start = self.get_timestamp(0)
             year = timestamp_start.year
             tzinfo = timestamp_start.tzinfo
             timestamp = dt.datetime(year, month, 1, 0, 0, 0, tzinfo=tzinfo)
             time = self.get_index(timestamp)
 
+        self.ep_start = time
         self.time = time
         self.timestep = 0
 
@@ -295,7 +306,19 @@ class SimEnv(Env):
             timestamp, electricity_cost, self.zone.t_air, t_set_heating,
             t_set_cooling, self.t_set_heating_prev, self.t_set_cooling_prev)
 
+        self.timestep += 1
+
         action_bound_violation = info['action_bound_violation']
+        episode_length_end = self.timestep >= self.config.episode_length
+
+        if episode_length_end:
+            reward += self.episode_termination_reward()
+
+        terminate = (
+            self.time == 365 * 24 or
+            info['discomfort_termination'] or
+            action_bound_violation or
+            episode_length_end)
 
         self.ep_reward += reward
 
@@ -303,14 +326,7 @@ class SimEnv(Env):
         self.results['set_heating'].append(self.zone.t_set_heating)
         self.results['set_cooling'].append(self.zone.t_set_cooling)
 
-        self.timestep += 1
         info['success'] = False
-
-        terminate = (
-            self.time == 365 * 24 or
-            info['discomfort_termination'] or
-            action_bound_violation or
-            self.timestep >= self.config.episode_length)
 
         return self.get_state(), reward, terminate, info
 
@@ -387,7 +403,7 @@ class SimEnv(Env):
             timestamp:timestamp + dt.timedelta(minutes=59),
             'Settlement Point Price'].mean() / 1000
 
-    def price_indicator(self, timestamp):
+    def price_indicator(self, timestamp, return_true=False):
         """
         Give a stochastic indicator for if the price at *timestamp* is higher,
         lower, or the same as the price at the previous time (`same` is
@@ -416,7 +432,10 @@ class SimEnv(Env):
             weights = [nonsignal_weight, nonsignal_weight, signal_weight]
         else:
             weights = [signal_weight, nonsignal_weight, nonsignal_weight]
-        return self.random.choice([-1, 0, 1], p=weights)
+        if return_true:
+            return np.argmax(weights) - 1
+        else:
+            return self.random.choice([-1, 0, 1], p=weights)
 
     def hour_of_year(self, timestamp):
         """Get integer corresponding to the hour of the year for `timestamp`
@@ -454,6 +473,17 @@ class SimEnv(Env):
         """
         return self.weather.iloc[index].loc['Temperature']
 
+    def episode_termination_reward(self):
+        agent_electricity_cost = sum(self.results['electricity_cost'])
+        if self.expert_performance is None:
+            expert_electricity_cost = 0
+        else:
+            expert_electricity_cost = self.expert_performance['cost'][
+                self.ep_start:self.ep_start + self.timestep].sum()
+        return self.config.terminal_reward_multiplier * (
+            expert_electricity_cost - agent_electricity_cost
+        )
+
     def get_reward(self, timestamp, electricity_cost, t_air,
                    t_set_heating, t_set_cooling, t_set_heating_prev,
                    t_set_cooling_prev):
@@ -479,9 +509,15 @@ class SimEnv(Env):
 
         if self.is_occupied(timestamp):
             discomf_score = self.comfort_penalty(timestamp, t_air)
-            reward_from_discomfort -= (
-                discomf_score * self.config.discomfort_penalty
-            )
+            if discomf_score >= 0.5 and discomf_score < 1:
+                reward_from_discomfort -= (
+                    discomf_score *
+                    self.config.partial_discomfort_penalty
+                )
+            elif discomf_score >= 1:
+                reward_from_discomfort -= (
+                    discomf_score * self.config.discomfort_penalty
+                )
             if discomf_score >= 1 and self.config.terminate_on_discomfort:
                 discomf_terminate = True
             if discomf_score == 0:
@@ -581,7 +617,7 @@ class SimEnv(Env):
         categorical actions if discrete.
         """
         if self.config.discrete_action:
-            return (self.t_high - self.t_low + 1) ** 2
+            return self.n_actions_discrete
         else:
             return 2
 
