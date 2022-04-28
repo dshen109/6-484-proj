@@ -52,7 +52,7 @@ class TestSim(TestCase):
 
         self.array_eq(
             self.env.results['electricity_cost'],
-            [0, 0], atol=0.001)
+            [0.54, 0.59], atol=0.01)
 
     def test_discrete_action_to_setpoints(self):
         self.env.t_high = 11
@@ -88,7 +88,7 @@ class TestSim(TestCase):
         self.assertTrue(terminate)
         self.assertAlmostEqual(info['discomfort_score'], 5.327, places=2)
         self.assertAlmostEqual(
-            info['reward_from_discomfort'], -532.692, places=2)
+            info['reward_from_discomfort'], -5.32692, places=2)
 
     def test_action_change_penalty(self):
         state1, _, _, info = self.env.step([15, 16])
