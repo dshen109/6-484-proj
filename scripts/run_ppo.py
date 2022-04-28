@@ -5,49 +5,33 @@ from deep_hvac.ppo import train_ppo
 from deep_hvac.runner import make_default_env, get_results
 
 import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
 
 
-def make_ppo_agent(env_name, max_steps=100000, policy_lr=3e-4, value_lr=1e-3,
-                   gae_lambda=0.95, rew_discount=0.99, seed=0):
+def train_ppo_agent(env_name, max_steps=100000, policy_lr=3e-4, value_lr=1e-3,
+                    gae_lambda=0.95, rew_discount=0.99, max_decay_steps=1e6,
+                    seed=0):
     return train_ppo(
         env_name=env_name, max_steps=max_steps,
         policy_lr=policy_lr, value_lr=value_lr, gae_lambda=gae_lambda,
-        rew_discount=rew_discount, seed=seed)
+        rew_discount=rew_discount, max_decay_steps=max_decay_steps, seed=seed)
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Train PPO.')
-    parser.add_argument('--seed', type=int, default=0,
-                        help='PPO training seed')
-    parser.add_argument('--discrete', action='store_true',
-                        help='Use discrete action space.')
-    parser.add_argument('--max-steps', type=int, default=1e5,
-                        help='Maximum number of steps for PPO training.')
-    parser.add_argument('--plot', action='store_true',
-                        help='Show plots at end of agent behavior.')
-
-    args = parser.parse_args()
-
+def run(seed, season, continuous_action, max_steps, make_plots):
     logger.log("Making env...")
     env, env_name = make_default_env(
-        # expert_performance='data/results-expert.pickle',
-        expert_performance=None,
-        discrete_action=args.discrete)
+        expert_performance='data/results-expert.pickle',
+        discrete_action=not continuous_action, season=season)
+
     logger.log("Starting PPO training")
-    ppo_agent, save_dir = make_ppo_agent(
-        max_steps=args.max_steps, policy_lr=1e-1, value_lr=1e0,
-        env_name=env_name, seed=args.seed)
+    ppo_agent, save_dir = train_ppo_agent(
+        max_steps=max_steps, policy_lr=1e-3, value_lr=1e-4,
+        env_name=env_name, max_decay_steps=1e8, seed=seed)
     logger.log("Finished PPO training")
     logger.log(f"PPO agent saved to {save_dir}")
 
-    ppo_results = get_results(ppo_agent, env, time=7 * 30 * 24)
-
-    # TODO: give description of results in filename
-    pd.to_pickle(ppo_results, 'ppo_results.pickle')
-
-    if args.plot:
+    if make_plots:
+        ppo_results = get_results(ppo_agent, env, time=7 * 30 * 24)
         times = ppo_results['timestamp'][0]
         t_int = np.array(ppo_results['t_inside']).mean(axis=0)
         t_outside = np.array(ppo_results['t_outside']).mean(axis=0)
@@ -64,3 +48,21 @@ if __name__ == "__main__":
                  label='heating setpoint')
         plt.legend()
         plt.show()
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Train PPO.')
+    parser.add_argument('--seed', type=int, default=0,
+                        help='PPO training seed')
+    parser.add_argument('--continuous', action='store_true',
+                        help='Use continuous action space.')
+    parser.add_argument('--max-steps', type=int, default=1e5,
+                        help='Maximum number of steps for PPO training.')
+    parser.add_argument('--plot', action='store_true',
+                        help='Show plots at end of agent behavior.')
+    parser.add_argument('--season', default=None, choices=('summer', 'winter'),
+                        help='Season to train on')
+
+    args = parser.parse_args()
+
+    run(args.seed, args.season, args.continuous, args.max_steps, args.plot)
