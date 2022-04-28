@@ -106,7 +106,7 @@ def sun_position(latitude, longitude, timestamp):
 
 def read_tf_log(log_dir):
     log_dir = Path(log_dir)
-    log_files = list(log_dir.glob(f'**/events.*'))
+    log_files = list(log_dir.glob('**/events.*'))
     if len(log_files) < 1:
         return None
     log_file = log_files[0]
