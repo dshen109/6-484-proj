@@ -7,6 +7,7 @@ from deep_hvac import building
 import numpy as np
 import pandas as pd
 
+import mock
 from unittest import TestCase
 
 
@@ -52,3 +53,53 @@ class TestSim(TestCase):
         self.array_eq(
             self.env.results['electricity_cost'],
             [0, 0], atol=0.001)
+
+    def test_discrete_action_to_setpoints(self):
+        self.env.t_high = 10
+        self.env.t_low = 8
+        self.assertRaises(
+            ValueError, lambda: self.env.discrete_action_to_setpoints(-1))
+        self.assertEqual(
+            self.env.discrete_action_to_setpoints(0), (8, 8)
+        )
+        self.assertEqual(
+            self.env.discrete_action_to_setpoints(1), (8, 9)
+        )
+        self.assertEqual(
+            self.env.discrete_action_to_setpoints(2), (8, 10)
+        )
+        self.assertEqual(
+            self.env.discrete_action_to_setpoints(3), (9, 8)
+        )
+        self.assertEqual(
+            self.env.discrete_action_to_setpoints(4), (9, 9)
+        )
+        self.assertEqual(
+            self.env.discrete_action_to_setpoints(5), (9, 10)
+        )
+        self.assertEqual(
+            self.env.discrete_action_to_setpoints(6), (10, 8)
+        )
+        self.assertEqual(
+            self.env.discrete_action_to_setpoints(7), (10, 9)
+        )
+        self.assertEqual(
+            self.env.discrete_action_to_setpoints(8), (10, 10)
+        )
+        self.assertRaises(
+            ValueError, lambda: self.env.discrete_action_to_setpoints(9))
+
+    def test_extreme_discomfort(self):
+        self.env.is_occupied = mock.MagicMock(return_value=True)
+        self.env.config.terminate_on_discomfort = True
+        state1, _, terminate, info = self.env.step([15, 16])
+        self.assertTrue(terminate)
+        self.assertAlmostEqual(info['discomfort_score'], 5.327, places=2)
+        self.assertAlmostEqual(
+            info['reward_from_discomfort'], -532.692, places=2)
+
+    def test_action_change_penalty(self):
+        state1, _, _, info = self.env.step([15, 16])
+        state2, _, terminate, info = self.env.step([16, 17])
+        self.assertEqual(info['action_change_reward'],
+                         - self.env.config.action_change_penalty)

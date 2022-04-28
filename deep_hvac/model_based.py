@@ -10,14 +10,14 @@ import random
 from torch import nn
 from gym.envs.registration import registry, register
 
-from building import comfort_temperature
-from runner import make_default_env
+from deep_hvac.building import comfort_temperature
+from deep_hvac.runner import make_default_env
+from deep_hvac.model_dynamics import BuildingDynamics, BuildingGym
 
-
+from scripts.plot_tf_log import plot_curves
 
 class MPC:
-
-    def __init__(self, 
+    def __init__(self,
         model,
         horizon        = 25,
         es_epsilon     = 0.001,
@@ -26,8 +26,9 @@ class MPC:
         es_popsize     = 200,
         es_elites      = 40
     ):
-        self.model = model
-
+                
+        self.model          = model
+        
         self.horizon        = horizon        # planning horizon
         self.es_epsilon     = es_epsilon     # variance threshold
         self.es_alpha       = es_alpha       # new distribution rolling average coefficient
@@ -38,11 +39,12 @@ class MPC:
         self.reset()
 
     def reset(self):
-        self.sol_mean = ((self.model.u_lb + self.model.u_ub) / 2).expand(self.horizon, self.model.u_shape)
-        self.sol_var = ((self.model.u_ub - self.model.u_lb) / 16).expand(self.horizon, self.model.u_shape)
+        # Initialize action trajectory distribution
+        self.sol_mean = ((self.model.u_lb + self.model.u_ub) / 2).expand(self.horizon,2)
+        self.sol_var = ((self.model.u_ub - self.model.u_lb) / 16).expand(self.horizon,2)
         
         self.timestep = 0
-
+    
     def action(self, q):
         # Remove last taken action and add 0 to end of buffer
         self.sol_mean = torch.cat([
@@ -60,7 +62,7 @@ class MPC:
         for n in range(self.es_generations):            
             # Terminate if variance drops below threshold
             if torch.max(var) < self.es_epsilon:
-                print('var below threshold! exiting')
+                print(f'var below threshold! exiting {n}')
                 break
 
             lb_dist = self.sol_mean - self.model.u_lb
@@ -69,6 +71,11 @@ class MPC:
                 torch.min((lb_dist / 2)**2, (ub_dist / 2)**2), var
             )
             
+            ### TODO: perform one ES trajectory optimization step, by
+            ### 1. sampling a trajectory
+            ### 2. evaluating the fitness of that trajectory on the model
+            ### 3. re-fitting self.sol_mean for the top N elites of the model
+            ### (50 pts)
 
             new_dist = torch.distributions.normal.Normal(
                 loc=torch.zeros_like(self.sol_mean), 
@@ -80,7 +87,7 @@ class MPC:
             trajs = self.model.run_batch_of_trajectories(qs, actions)[:, 1:]
 
             rewards = self.model.reward(trajs, actions)
-            
+
             rewards_sort = torch.argsort(torch.sum(rewards, 1), descending=True)
             elites = actions[rewards_sort][:self.es_elites]
             elites = torch.mean(elites, 0)
@@ -88,6 +95,7 @@ class MPC:
 
             self.sol_mean = self.es_alpha * elites + (1 - self.es_alpha) * self.sol_mean
             self.sol_var = self.es_alpha * elites_var + (1 - self.es_alpha) * self.sol_var
+            ### ENDTODO
         
         self.timestep += 1
         return self.sol_mean[0]
@@ -99,7 +107,7 @@ def set_random_seed(seed):
 
 class LearnedDynamicsModel:
 
-    def __init__(self, seed, u_range=[10, 40], discomfort_penalty = 100):
+    def __init__(self, seed, companion_env, u_range=[10, 40], discomfort_penalty = 100):
         set_random_seed(seed)
         self.u_range = u_range
 
@@ -109,43 +117,35 @@ class LearnedDynamicsModel:
         self.u_ub = torch.tensor([u_range[1]]).float()
         self.u_shape = 2
 
-        input_size = 18
+        input_size = 24
 
         self.model = nn.Sequential(
             nn.Linear(input_size, 48),
             nn.ReLU(),
             nn.Linear(48, 48),
             nn.ReLU(),
-            nn.Linear(48, 16),
+            nn.Linear(48, 22),
             nn.Tanh()
         )
 
         self.optim = torch.optim.Adam(self.model.parameters())
-        self.loss = nn.MSELoss()
+        self.loss = nn.HuberLoss()
 
     def step(self, q, u):
-        try:
-          inp = torch.stack([q[:, 0], q[:, 1], q[:, 2], 
-                             q[:, 3], q[:, 4], q[:, 5],
-                             q[:, 6], q[:, 7], q[:, 8],
-                             q[:, 9], q[:, 10], q[:, 11],
-                             q[:, 12], q[:, 13], q[:, 14],
-                             q[:, 15], u[:, 0], u[:, 1] 
-                            ]).T
-          inp = torch.tensor(inp, dtype=torch.float32)
-          q_prime = q + self.model(inp)
-          return q_prime
-        except:
-          inp = torch.stack([q[:, 0], q[:, 1], q[:, 2], 
-                             q[:, 3], q[:, 4], q[:, 5],
-                             q[:, 6], q[:, 7], q[:, 8],
-                             q[:, 9], q[:, 10], q[:, 11],
-                             q[:, 12], q[:, 13], q[:, 14],
-                             q[:, 15], u[:, 0], u[:, 1] 
-                            ]).T
-          inp = torch.tensor(inp, dtype=torch.float32)
-          q_prime = q + self.model(inp)
-          return q_prime
+        inp = torch.stack([q[:, 0], q[:, 1], q[:, 2], 
+                            q[:, 3], q[:, 4], q[:, 5],
+                            q[:, 6], q[:, 7], q[:, 8],
+                            q[:, 9], q[:, 10], q[:, 11],
+                            q[:, 12], q[:, 13], q[:, 14],
+                            q[:, 15], q[:, 16], q[:, 17],
+                            q[:, 18], q[:, 19], q[:, 20],
+                            q[:, 21],
+                            (u[:, 0] - self.u_range[0]) / (self.u_range[1] -self.u_range[0]), 
+                            (u[:, 1] - self.u_range[0]) / (self.u_range[1] -self.u_range[0]) 
+                        ]).T
+        inp = torch.tensor(inp, dtype=torch.float32)
+        q_prime = q + self.model(inp)
+        return q_prime
 
     # given q [n, q_shape] and u [n, t] run the trajectories
     def run_batch_of_trajectories(self, q, u):
@@ -180,7 +180,7 @@ class LearnedDynamicsModel:
 
     def reward(self, q, u):
         #TODO: calculate reward by calling env 
-        electricity_cost = q[:, :, 13] * q[:, :, 11] / 1000
+        electricity_cost = q[:, :, 16] * q[:, :, 17] / 1000
         reward_from_price = -electricity_cost
 
         discomfs = np.zeros((q.shape[0], q.shape[1]))
@@ -210,11 +210,49 @@ class LearnedDynamicsModel:
         else:
             return deviation - 2.5
 
+def test_MPC_ground_truth():
+    env = BuildingGym()
+    mpc = MPC(BuildingDynamics(), horizon = 25, es_popsize=200)
 
-if __name__ == "__main__":
-    dynamics_model = LearnedDynamicsModel(seed=0)
+    qs, expert_pricing = [], []
+    q = env.reset()
+    print('Q HERE: ')
+    print(q)
+    done = False 
+    complete_r = 0
+    i = 0
+    while not done:
+        print('Step: {:d}'.format(i))
+        i+=1
+        qs.append(q)
+        q, r, done, _ = env.step(mpc.action(q))
+        complete_r += r
+
+    print("GROUND TRUTH REWARD: " + str(complete_r))
+    qs = np.array(qs, dtype=np.float32)
+    
+    # data_dict = {
+    #     'set_heating': [[i for i in range(720//5)], qs[::5, env.state_idx['heating_setpoint']]], 
+    #     'set_cooling': [[i for i in range(720//5)], qs[::5, env.state_idx['cooling_setpoint']]],
+    # }
+    # plot_curves(data_dict, "Ground Truth MPC", ylabel="Temp")
+
+    data_dict = {
+        'outside_temp': [[i for i in range(720//5)], qs[::5, 2]],
+        'inside_temp': [[i for i in range(720//5)], qs[::5, 1]],
+    }
+    plot_curves(data_dict, "Ground Truth MPC", ylabel="Temp")
+    
+    # data_dict = {
+    #     'price_paid' : [[i for i in range(720)], qs[:, env.state_idx['electricity_consumed']] * qs[:, env.state_idx['price_previous']]],
+    #     'expert_paid': [[i for i in range(720)], expert_pricing],
+    # }
+    # plot_curves(data_dict, "Ground Truth MPC", ylabel="$")
+
+def test_MPC_learned_model():
+    e, building = make_default_env(discrete_action=False)
+    dynamics_model = LearnedDynamicsModel(seed=0, companion_env=e)
     mpc = MPC(dynamics_model)
-    e = make_default_env()
 
     all_q, all_q_prime, all_u = None, None, None
     for epoch in range(100):
@@ -249,4 +287,8 @@ if __name__ == "__main__":
         if r > -20:
             break
 
+if __name__ == "__main__":
+    test_MPC_ground_truth()
+
+    # test_MPC_learned_model()
             
