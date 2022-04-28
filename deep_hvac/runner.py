@@ -53,22 +53,33 @@ def update_results(results, ep_results):
 
 def make_default_env(episode_length=24 * 30, terminate_on_discomfort=True,
                      discomfort_penalty=1e4, discrete_action=True,
-                     expert_performance=None):
+                     expert_performance=None, season=None):
     """
     Register a default environment
 
     :return Env: Registered environment
     """
-    if discrete_action:
-        env_name = 'DefaultBuilding-v0-action-discrete'
+    if season is None:
+        season = 'yearround'
+        env_months = None
+    elif season == 'summer':
+        env_months = (7, 8, 9)
+    elif season == 'winter':
+        env_months = (1, 2, 12)
     else:
-        env_name = 'DefaultBuilding-v0-action-continuous'
+        raise ValueError("Unknown season")
+
+    if discrete_action:
+        env_name = f'DefaultBuilding-v0-action-discrete-{season}'
+    else:
+        env_name = f'DefaultBuilding-v0-action-continuous-{season}'
     logger.debug(f"Creating default environment {env_name}.")
     config = simulator.SimConfig(
         episode_length=episode_length,
         terminate_on_discomfort=terminate_on_discomfort,
         discomfort_penalty=discomfort_penalty,
-        discrete_action=discrete_action
+        discrete_action=discrete_action,
+        reset_months=env_months
     )
     datadir = os.path.join(
         os.path.split(os.path.abspath(__file__))[0],
@@ -94,6 +105,8 @@ def make_default_env(episode_length=24 * 30, terminate_on_discomfort=True,
         expert_performance=None
     )
     if expert_performance is None:
+        pass
+    elif expert_performance is None:
         # Run the naive agent as a baseline.
         naive_agent = agent.NaiveAgent()
         env = simulator.SimEnv(**env_args)
@@ -116,7 +129,7 @@ def make_default_env(episode_length=24 * 30, terminate_on_discomfort=True,
         else:
             env_args['expert_performance'] = expert
     else:
-        env_args['expert_performace'] = expert_performance
+        env_args['expert_performance'] = expert_performance
     if env_name in registry.env_specs:
         del registry.env_specs[env_name]
     register(
