@@ -53,7 +53,8 @@ def update_results(results, ep_results):
 
 def make_default_env(episode_length=24 * 30, terminate_on_discomfort=True,
                      discomfort_penalty=1e4, discrete_action=True,
-                     expert_performance=None, season=None):
+                     expert_performance=None, season=None,
+                     capacitance='medium'):
     """
     Register a default environment
 
@@ -70,10 +71,11 @@ def make_default_env(episode_length=24 * 30, terminate_on_discomfort=True,
         raise ValueError("Unknown season")
 
     if discrete_action:
-        env_name = f'DefaultBuilding-v0-action-discrete-{season}'
+        env_name = f'DefaultBuilding-{capacitance}-v0-action-discrete-{season}'
     else:
-        env_name = f'DefaultBuilding-v0-action-continuous-{season}'
-    logger.debug(f"Creating default environment {env_name}.")
+        env_name = \
+            f'DefaultBuilding-{capacitance}-v0-action-continuous-{season}'
+    logger.debug(f"Creating environment {env_name}.")
     config = simulator.SimConfig(
         episode_length=episode_length,
         terminate_on_discomfort=terminate_on_discomfort,
@@ -92,7 +94,7 @@ def make_default_env(episode_length=24 * 30, terminate_on_discomfort=True,
     ercot = pd.read_pickle(os.path.join(
         datadir, 'houston-2018-prices.pickle'))
     logger.debug("Finished loading price data.")
-    zone, windows, latitude, longitude = default_building()
+    zone, windows, latitude, longitude = default_building(capacitance)
 
     env_args = dict(
         prices=ercot,
@@ -105,8 +107,6 @@ def make_default_env(episode_length=24 * 30, terminate_on_discomfort=True,
         expert_performance=None
     )
     if expert_performance is None:
-        pass
-    elif expert_performance is None:
         # Run the naive agent as a baseline.
         naive_agent = agent.NaiveAgent()
         env = simulator.SimEnv(**env_args)
@@ -121,7 +121,7 @@ def make_default_env(episode_length=24 * 30, terminate_on_discomfort=True,
         env_args['expert_performance'] = pd.DataFrame(
             costs, columns=['cost'], index=nsrdb.weather_hourly.index)
         env.results['expert_performance'] = env_args['expert_performance']
-        pd.to_pickle(env.results, 'data/results-expert.pickle')
+        pd.to_pickle(env.results, f'data/results-expert-{capacitance}.pickle')
     elif isinstance(expert_performance, str):
         expert = pd.read_pickle(expert_performance)
         if not isinstance(expert, pd.DataFrame):
