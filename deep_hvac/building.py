@@ -1,3 +1,4 @@
+from sys import intern
 from rc_simulator import supply_system
 from rc_simulator.building_physics import Zone
 from rc_simulator.emission_system import AirConditioning
@@ -29,8 +30,16 @@ OCCUPIED_COOLING_STPT = 25.56  # 78F
 UNOCCUPIED_HEATING_STPT = 18.33  # 65F
 UNOCCUPIED_COOLING_STPT = 29.44  # 85F
 
+internal_capacitance = {
+    'very_light': 80000,
+    'light': 110000,
+    'medium': 165000,
+    'heavy': 260000,
+    'very_heavy': 370000
+}
 
-def default_building():
+
+def default_building(thermal_capacitance='medium'):
     """
     Make an office building representative of a default building.
 
@@ -48,6 +57,7 @@ def default_building():
     ach_infil = infiltration * gross_wall_area * 3600 / volume
 
     n_occupants = int(10.76 * (3 * single_floor_area) / OFFICE_OCCUPANCY)
+    capacitance = internal_capacitance[thermal_capacitance]
 
     params = dict(
         window_area=653,
@@ -60,7 +70,7 @@ def default_building():
         ach_vent=ach_vent,
         ach_infl=ach_infil,
         ventilation_efficiency=0,
-        thermal_capacitance_per_floor_area=260000,  # "heavy" thermal capacitance
+        thermal_capacitance_per_floor_area=capacitance,
         t_set_heating=OCCUPIED_HEATING_STPT,
         t_set_cooling=OCCUPIED_COOLING_STPT,
         max_cooling_energy_per_floor_area=-464338 / single_floor_area / 3,
