@@ -1,4 +1,10 @@
-from sys import intern
+import os, sys
+
+sim_dir = os.path.join(
+        os.path.split(os.path.abspath(__file__))[0],
+        '..', 'rc-building-sim'
+    )
+sys.path.insert(1, sim_dir)
 from rc_simulator import supply_system
 from rc_simulator.building_physics import Zone
 from rc_simulator.emission_system import AirConditioning

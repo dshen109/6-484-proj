@@ -133,7 +133,7 @@ def make_default_env(episode_length=24 * 30, terminate_on_discomfort=True,
     if env_name in registry.env_specs:
         del registry.env_specs[env_name]
     register(
-        id=env_name, entry_point='deep_hvac.simulator:SimEnv', kwargs=env_args
+        id=env_name, entry_point='simulator:SimEnv', kwargs=env_args
     )
     return make_vec_env(env_name, 1, 0).envs[0], env_name
 

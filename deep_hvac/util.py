@@ -4,6 +4,7 @@ from pathlib import Path
 from deep_hvac import logger
 
 import pandas as pd
+import numpy as np
 from pysolar.solar import get_position
 import pytz
 from tensorboard.backend.event_processing.event_accumulator \
@@ -101,6 +102,14 @@ def sun_position(latitude, longitude, timestamp):
     # timestamps
     if isinstance(timestamp, pd.Timestamp):
         timestamp = timestamp.to_pydatetime()
+    
+    if isinstance(timestamp, pd.Series):
+        positions = []
+        for i in range(len(timestamp)):
+            pydate = timestamp[i].to_pydatetime()
+            positions.append(get_position(latitude, longitude, pydate))
+        return pd.DataFrame(positions, columns=['altitude', 'azimuth'], dtype=np.float32)
+
     return get_position(latitude, longitude, timestamp)
 
 

@@ -10,7 +10,6 @@ from deep_hvac.spaces.multi_discrete import MultiDiscrete
 from deep_hvac.building import comfort_temperature
 from deep_hvac.util import sun_position
 
-
 class SimConfig():
 
     def __init__(self, episode_length=24 * 30,
@@ -196,6 +195,15 @@ class SimEnv(Env):
         # initial approximation
         self.t_m_prev = t_inside
         self.step_bulk()
+        timestamp, cur_weather = self.get_timestamp_and_weather()
+        self.cur_state = [
+            self.zone.t_set_heating,
+            self.zone.t_set_cooling,
+            cur_weather['Temperature'],
+            self.zone.t_air,
+            timestamp.hour,
+            timestamp.weekday()
+        ]
 
         # reset the episodes results
         self.results = defaultdict(list)
@@ -328,7 +336,17 @@ class SimEnv(Env):
 
         info['success'] = False
 
+<<<<<<< HEAD
         return self.get_state(), reward, terminate, info
+=======
+        terminate = (
+            self.time == 365 * 24 or
+            info['discomfort_termination'] or
+            action_bound_violation or
+            self.timestep >= self.config.episode_length)
+
+        return self.get_state(), reward, self.time == 365 * 24 or self.timestep >= self.config.episode_length, info
+>>>>>>> main
 
     def get_state(self):
         """
@@ -365,6 +383,11 @@ class SimEnv(Env):
             except IndexError:
                 # exceeded end of simulation, pad with zeros.
                 occupancy.append(0)
+
+        elec_consumed = (
+            self.zone.heating_sys_electricity +
+            self.zone.cooling_sys_electricity
+        )
 
         return [
             self.zone.t_set_heating,
@@ -591,6 +614,7 @@ class SimEnv(Env):
                 f"Discrete action {action} not in action range")
 
         return (self.t_low + heating_shift, self.t_low + cooling_shift)
+<<<<<<< HEAD
 
     def _map_discrete_actions(self):
         """Create action map for discrete actions and cache."""
@@ -603,6 +627,8 @@ class SimEnv(Env):
             action_map.append((heating, cooling))
         self._discrete_action_map = tuple(action_map)
 
+=======
+>>>>>>> main
     @property
     def action_size(self):
         """
