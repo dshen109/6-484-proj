@@ -35,8 +35,8 @@ class TestSim(TestCase):
     def test_timestepping(self):
         states = []
         states.append(self.env.reset(0))
-        state2, _, _, _ = self.env.step(self.action_default)
-        state3, _, _, _ = self.env.step(self.action_default)
+        for _ in range(10):
+            self.env.step(self.action_default)
         timestamps = self.env.results['timestamp']
 
         # First timestamp should be hour after year starts
@@ -48,11 +48,18 @@ class TestSim(TestCase):
 
         self.array_eq(
             self.env.results['t_outside'],
-            self.nsrdb.weather_hourly.iloc[1:3]['Temperature'].values)
+            self.nsrdb.weather_hourly.iloc[1:11]['Temperature'].values)
+
+        expected_cost = [
+            1.32181279, 1.33013849, 1.3672246,
+            1.41426522, 1.54790073, 1.64943658,
+            1.62634529, 1.61891077, 1.90342777,
+            1.9263284
+        ]
 
         self.array_eq(
             self.env.results['electricity_cost'],
-            [0.54, 0.59], atol=0.01)
+            expected_cost, atol=0.01)
 
     def test_discrete_action_to_setpoints(self):
         self.env.t_high = 11
