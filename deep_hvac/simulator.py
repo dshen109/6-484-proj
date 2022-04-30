@@ -561,14 +561,7 @@ class SimEnv(Env):
         :param float t_air: Indoor air temperature
         """
         outdoor = self.get_outdoor_temperature(self.get_index(timestamp))
-        t_comf = comfort_temperature(outdoor)
-        deviation = np.abs(t_air - t_comf)
-        if deviation <= 2.5:
-            return 0
-        elif deviation <= 3.5:
-            return np.interp(deviation, [2.5, 3.5], [0.5, 1])
-        else:
-            return deviation - 2.5
+        return comfort_penalty(outdoor, t_air)
 
     def is_occupied(self, timestamp):
         if isinstance(timestamp, int):
@@ -626,3 +619,14 @@ class SimEnv(Env):
         action = [t_set_heating, t_set_cooling]
         return self.action_space.contains(action) and \
             t_set_heating < t_set_cooling
+
+
+def comfort_penalty(t_outside, t_inside):
+    t_comf = comfort_temperature(t_outside)
+    deviation = np.abs(t_inside - t_comf)
+    if deviation <= 2.5:
+        return 0
+    elif deviation <= 3.5:
+        return np.interp(deviation, [2.5, 3.5], [0.5, 1])
+    else:
+        return deviation - 2.5
