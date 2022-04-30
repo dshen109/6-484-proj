@@ -11,3 +11,7 @@
 - implement MPC (Cale)
 - plot PPO stuff and see if it works after fixing episode initialization
 - switch comfort score back to linear function of OAT
+# To add Apr 27
+    - index property for observation variables on environment
+    - finish price indicator
+    - run PPO

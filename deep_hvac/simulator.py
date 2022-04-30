@@ -5,10 +5,10 @@ import itertools
 from gym import Env, spaces
 import numpy as np
 
-from deep_hvac.agent import NaiveAgent, AshraeComfortAgent
 from deep_hvac.spaces.multi_discrete import MultiDiscrete
 from deep_hvac.building import comfort_temperature
 from deep_hvac.util import sun_position
+
 
 class SimConfig():
 
@@ -136,9 +136,8 @@ class SimEnv(Env):
                 nvec=[span, span], starts=[self.t_low, self.t_low]
             )
 
-        if isinstance(agent, (NaiveAgent, AshraeComfortAgent)) or \
-                agent is None:
-            self.action_shift = 0
+        if hasattr(agent, 'action_shift'):
+            self.action_shift = agent.action_shift
         elif self.config.discrete_action:
             self.action_shift = 0
         else:
@@ -457,7 +456,7 @@ class SimEnv(Env):
         """
         year = timestamp.year
         start = dt.datetime(year, 1, 1, 0, 0, 0, tzinfo=timestamp.tzinfo)
-        return int((start - timestamp).total_seconds() / 3600)
+        return int((timestamp - start).total_seconds() / 3600)
 
     def get_weather(self, time):
         """Return Series of weather data."""
@@ -579,10 +578,7 @@ class SimEnv(Env):
     def is_occupied(self, timestamp):
         if isinstance(timestamp, int):
             timestamp = self.get_timestamp(timestamp)
-        is_weekday = timestamp.weekday() < 5
-        hour = timestamp.hour
-
-        return is_weekday and (hour >= 8 and hour <= 6 + 12)
+        return is_occupied(timestamp)
 
     def expert_price_paid(self, timestamp):
         if self.expert_performance is None:
@@ -643,3 +639,10 @@ def comfort_penalty(t_outside, t_inside):
         return np.interp(deviation, [2.5, 3.5], [0.5, 1])
     else:
         return deviation - 2.5
+
+
+def is_occupied(timestamp):
+    is_weekday = timestamp.weekday() < 5
+    hour = timestamp.hour
+
+    return is_weekday and (hour >= 8 and hour <= 6 + 12)
