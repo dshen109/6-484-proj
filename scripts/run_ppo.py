@@ -1,4 +1,5 @@
 import argparse
+import os
 
 from deep_hvac import logger
 from deep_hvac.ppo import train_ppo
@@ -17,11 +18,16 @@ def train_ppo_agent(env_name, max_steps=100000, policy_lr=3e-4, value_lr=1e-3,
         rew_discount=rew_discount, max_decay_steps=max_decay_steps, seed=seed)
 
 
-def run(seed, season, continuous_action, max_steps, make_plots):
+def run(seed, season, continuous_action, max_steps, make_plots, construction):
     logger.log("Making env...")
+    if os.path.exists(f'data/results-expert-{construction}.pickle'):
+        expert_performance = f'data/results-expert-{construction}.pickle'
+    else:
+        expert_performance = None
     env, env_name = make_default_env(
-        expert_performance='data/results-expert.pickle',
-        discrete_action=not continuous_action, season=season)
+        expert_performance=expert_performance,
+        discrete_action=not continuous_action, season=season,
+        capacitance=construction)
 
     logger.log("Starting PPO training")
     ppo_agent, save_dir = train_ppo_agent(
@@ -62,7 +68,12 @@ if __name__ == "__main__":
                         help='Show plots at end of agent behavior.')
     parser.add_argument('--season', default=None, choices=('summer', 'winter'),
                         help='Season to train on')
+    parser.add_argument('--construction', default='medium',
+                        choices=('very_light', 'light', 'medium', 'heavy',
+                                 'very_heavy'),
+                        help='Building capacitance construction')
 
     args = parser.parse_args()
 
-    run(args.seed, args.season, args.continuous, args.max_steps, args.plot)
+    run(args.seed, args.season, args.continuous, args.max_steps, args.plot,
+        args.construction)
