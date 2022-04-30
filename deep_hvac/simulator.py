@@ -336,17 +336,7 @@ class SimEnv(Env):
 
         info['success'] = False
 
-<<<<<<< HEAD
         return self.get_state(), reward, terminate, info
-=======
-        terminate = (
-            self.time == 365 * 24 or
-            info['discomfort_termination'] or
-            action_bound_violation or
-            self.timestep >= self.config.episode_length)
-
-        return self.get_state(), reward, self.time == 365 * 24 or self.timestep >= self.config.episode_length, info
->>>>>>> main
 
     def get_state(self):
         """
@@ -614,7 +604,6 @@ class SimEnv(Env):
                 f"Discrete action {action} not in action range")
 
         return (self.t_low + heating_shift, self.t_low + cooling_shift)
-<<<<<<< HEAD
 
     def _map_discrete_actions(self):
         """Create action map for discrete actions and cache."""
@@ -627,8 +616,6 @@ class SimEnv(Env):
             action_map.append((heating, cooling))
         self._discrete_action_map = tuple(action_map)
 
-=======
->>>>>>> main
     @property
     def action_size(self):
         """
