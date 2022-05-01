@@ -21,7 +21,7 @@ import gym
 def train_ppo(env_name='DefaultBuilding-v0', max_steps=100000,
               policy_lr=3e-4, value_lr=1e-3, gae_lambda=0.95,
               rew_discount=0.99, seed=0, max_decay_steps=1e6,
-              save_dir=None):
+              save_dir=None, train=True):
     """
     Note that the environment name must already be registered before running
     this.
@@ -30,7 +30,7 @@ def train_ppo(env_name='DefaultBuilding-v0', max_steps=100000,
     cfg.alg.num_envs = 1
     cfg.alg.seed = seed
 
-    cfg.alg.episode_steps = 24 * 30
+    cfg.alg.episode_steps = 24 * 30 * 10
     cfg.alg.log_interval = 1
     cfg.alg.eval_interval = 20
 
@@ -73,11 +73,19 @@ def train_ppo(env_name='DefaultBuilding-v0', max_steps=100000,
     critic = make_critic(ob_size)
     agent = PPOAgent(actor=actor, critic=critic, env=env)
     runner = EpisodicRunner(agent=agent, env=env)
-    engine = PPOEngine(agent=agent,
-                       runner=runner)
-    engine.train()
+    if train:
+        engine = PPOEngine(agent=agent,
+                           runner=runner)
+        engine.train()
 
     return agent, cfg.alg.save_dir
+
+
+def train_ppo_with_behavioral_cloning(
+        env_name='DefaultBuilding-v0', max_steps=100000, policy_lr=3e-4,
+        value_lr=1e-3, gae_lambda=0.95, rew_discount=0.99, seed=0,
+        max_decay_steps=1e6):
+    pass
 
 
 def load_agent(modelpath, env_name):
@@ -93,7 +101,7 @@ def load_agent(modelpath, env_name):
     critic = make_critic(env.observation_space.shape[0])
     agent = PPOAgent(actor=actor, critic=critic, env=env)
     agent.load_model(pretrain_model=modelpath)
-    return agent
+    return agent, actor
 
 
 def make_critic(observation_size, in_features=128):
