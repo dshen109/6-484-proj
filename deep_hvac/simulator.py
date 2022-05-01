@@ -601,6 +601,42 @@ class SimEnv(Env):
 
         return (self.t_low + heating_shift, self.t_low + cooling_shift)
 
+    def continuous_action_to_discrete(self, heating_setpoint,
+                                      cooling_setpoint):
+        """Map a continuous action to the discrete action space
+
+        :return int:
+        """
+        if np.isscalar(heating_setpoint):
+            heating_shift = int(np.round(heating_setpoint - self.t_low))
+            cooling_shift = int(np.round(cooling_setpoint - self.t_low))
+            try:
+                return self._discrete_action_map_inverse[
+                    (heating_shift, cooling_shift)
+                ]
+            except KeyError:
+                raise KeyError(
+                    f"{heating_setpoint}, {cooling_setpoint} "
+                    "not in action space")
+        else:
+            # Gotta vectorize...
+            # Assume that inputs are 1d arrays
+            n_obs = heating_setpoint.shape[0]
+            output = np.zeros((n_obs, 1, 1))
+            setpoints = np.vstack(
+                [heating_setpoint, cooling_setpoint]).T
+            setpoints = (setpoints - self.t_low).astype(int)
+            for i in range(n_obs):
+                try:
+                    output[i, 0] = self._discrete_action_map_inverse[
+                        tuple(setpoints[i, :])
+                    ]
+                except KeyError:
+                    raise KeyError(f"{tuple(setpoints[i, :])} not in "
+                                   "action space.")
+            return output
+
+
     def _map_discrete_actions(self):
         """Create action map for discrete actions and cache."""
         # Tuples of heating, cooling setpoint shifts
@@ -611,6 +647,9 @@ class SimEnv(Env):
                 continue
             action_map.append((heating, cooling))
         self._discrete_action_map = tuple(action_map)
+        self._discrete_action_map_inverse = {
+            k: v for v, k in enumerate(action_map)
+        }
 
     @property
     def action_size(self):
