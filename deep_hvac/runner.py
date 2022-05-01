@@ -54,10 +54,11 @@ def update_results(results, ep_results):
 def make_default_env(episode_length=24 * 30, terminate_on_discomfort=True,
                      discomfort_penalty=1e4, discrete_action=True,
                      expert_performance=None, season=None,
-                     capacitance='medium'):
+                     capacitance='medium', create_expert=True):
     """
     Register a default environment
 
+    :param bool create_expert: Whether or not to create an expert.
     :return Env: Registered environment
     """
     if season is None:
@@ -71,10 +72,15 @@ def make_default_env(episode_length=24 * 30, terminate_on_discomfort=True,
         raise ValueError("Unknown season")
 
     if discrete_action:
-        env_name = f'DefaultBuilding-{capacitance}-v0-action-discrete-{season}'
+        env_name = (
+            f'DefaultBuilding-{capacitance}-v0-action-discrete-{season}-'
+            f'discomf-terminate-{terminate_on_discomfort}'
+        )
     else:
-        env_name = \
+        env_name = (
             f'DefaultBuilding-{capacitance}-v0-action-continuous-{season}'
+            f'discomf-terminate-{terminate_on_discomfort}'
+        )
     logger.debug(f"Creating environment {env_name}.")
     config = simulator.SimConfig(
         episode_length=episode_length,
@@ -106,9 +112,11 @@ def make_default_env(episode_length=24 * 30, terminate_on_discomfort=True,
         config=config,
         expert_performance=None
     )
-    if expert_performance is None:
+    if not create_expert:
+        pass
+    elif expert_performance is None:
         # Run the naive agent as a baseline.
-        naive_agent = agent.NaiveAgent()
+        naive_agent = agent.NaiveAgent(skip_parent_init=True)
         env = simulator.SimEnv(**env_args)
         logger.debug("Running naive baseline...")
         obs = env.reset(0)
