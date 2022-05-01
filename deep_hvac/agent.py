@@ -54,10 +54,22 @@ class AshraeComfortAgent(BaseAgent):
         """
         if isinstance(observation, (list, tuple)):
             observation = np.array(observation)
+        if len(observation.shape) == 1:
+            observation = np.expand_dims(observation, 0)
+        is_occupied = observation[:, SimEnv.state_idx['occupancy_ahead_0']]
+        outdoor_temperature = observation[
+            :, SimEnv.state_idx['outdoor_temperature']]
+        is_occupied = is_occupied.astype(bool)
+
+        if isinstance(observation, (list, tuple)):
+            observation = np.array(observation)
 
         outdoor_temperature = observation[2]
         is_occupied = observation[SimEnv.state_idx['occupancy_ahead_0']]
         comfort_t = building.comfort_temperature(outdoor_temperature)
+
+        action = np.zeros((observation.shape[0], 2))
+
         if is_occupied:
             action = [comfort_t - 2.5, comfort_t + 2.5]
         else:
