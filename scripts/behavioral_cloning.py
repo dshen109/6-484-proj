@@ -1,10 +1,12 @@
 from dataclasses import dataclass
 
-from deep_hvac import agent, behavioral_clone, ppo, runner
+from deep_hvac import agent, behavioral_clone, logger, ppo, runner
 
 from easyrl.utils.gym_util import make_vec_env
 from easyrl.configs import cfg
 import gym
+import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import torch
 from torch import nn
@@ -50,6 +52,9 @@ def mimic(env_name):
 
 
 if __name__ == '__main__':
+    plot_performace = True
+    trajectory_file = 'scripts/fixtures/expert-traj-summer.pickle'
+    n_trajectories = 10
 
     _, env_name = runner.make_default_env(
         terminate_on_discomfort=False, create_expert=False,
@@ -57,18 +62,40 @@ if __name__ == '__main__':
     )
     env = make_vec_env(env_name, 1, 0)
     try:
-        trajectories = pd.read_pickle(
-            'scripts/fixtures/expert-traj-summer.pickle')
+        trajectories = pd.read_pickle(trajectory_file)
+        logger.log(f"Loaded expert demonstrations {trajectory_file}")
     except FileNotFoundError:
         trajectories = None
 
     expertagent = agent.NaiveAgent(env=env)
     behavioral_clone.set_configs(env_name)
     if trajectories is None:
+        logger.log("Creating demonstration data...")
         trajectories = behavioral_clone.generate_demonstration_data(
-            expertagent, env, 2)
+            expertagent, env, 50)
+        pd.to_pickle(trajectories, trajectory_file)
     else:
         trajectories = trajectories
+    logger.log("Starting behavioral cloning...")
     agent_cloned, logs, _ = behavioral_clone.train_bc_agent(
-        mimic(env_name), trajectories, max_epochs=1000)
+        mimic(env_name), trajectories[:n_trajectories], max_epochs=2000)
     torch.save(agent_cloned.actor, 'scripts/output/cloned-agent-summer.pt')
+
+    if plot_performace:
+        results = runner.get_results(agent_cloned, env.envs[0], time=8*30*24)
+        times = results['timestamp'][0]
+        t_int = np.array(results['t_inside']).mean(axis=0)
+        t_outside = np.array(results['t_outside']).mean(axis=0)
+        t_cool_stpt = np.array(results['set_cooling']).mean(axis=0)
+        t_heat_stpt = np.array(results['set_heating']).mean(axis=0)
+        t_bulk = np.array(results['t_bulk']).mean(axis=0)
+
+        plt.plot(times, t_int, label='t_inside')
+        plt.plot(times, t_outside, label='t_outside')
+        plt.plot(times, t_bulk, label='t_bulk')
+        plt.plot(times, t_cool_stpt, linestyle='dotted', alpha=0.8,
+                 label='cooling setpoint')
+        plt.plot(times, t_heat_stpt, linestyle='dotted', alpha=0.8,
+                 label='heating setpoint')
+        plt.legend()
+        plt.show()
