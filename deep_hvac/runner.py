@@ -92,13 +92,13 @@ def make_default_env(episode_length=24 * 30, terminate_on_discomfort=True,
         os.path.split(os.path.abspath(__file__))[0],
         '..', 'data'
     )
-    logger.debug("Loading NSRDB data...")
     nsrdb_path = os.environ.get(
         'NSRDB_TRAINING',
         os.path.join(datadir, '1704559_29.72_-95.35_2018.csv')
     )
+    logger.debug(f"Loading NSRDB data from {nsrdb_path}")
     nsrdb = NsrdbReader(nsrdb_path)
-    logger.debug(f"Loaded NSRDB data from {nsrdb_path}")
+
     logger.debug("Loading Houston price data...")
     ercot_path = os.environ.get(
         'ERCOT_TRAINING',
