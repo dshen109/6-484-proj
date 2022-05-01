@@ -104,10 +104,10 @@ def load_agent(modelpath, env_name):
     return agent, actor
 
 
-def make_critic(observation_size, in_features=128):
+def make_critic(observation_size, in_features=256):
     body = MLP(input_size=observation_size,
-               hidden_sizes=[128, 128],
-               output_size=128,
+               hidden_sizes=[256, 256],
+               output_size=256,
                hidden_act=nn.Tanh,
                output_act=nn.Tanh)
     return ValueNet(body, in_features=in_features)
@@ -116,14 +116,14 @@ def make_critic(observation_size, in_features=128):
 def make_actor(observation_size, action_size,
                categorical=False):
     body = MLP(input_size=observation_size,
-               hidden_sizes=[128, 128],
-               output_size=128,
+               hidden_sizes=[256, 256],
+               output_size=256,
                hidden_act=nn.Tanh,
                output_act=nn.Tanh)
     if not categorical:
         return DiagGaussianPolicy(
             body_net=body,
-            in_features=128,
+            in_features=256,
             action_dim=action_size,
             tanh_on_dist=cfg.alg.tanh_on_dist,
             std_cond_in=cfg.alg.std_cond_in
@@ -131,6 +131,6 @@ def make_actor(observation_size, action_size,
     else:
         return CategoricalPolicy(
             body_net=body,
-            in_features=128,
+            in_features=256,
             action_dim=action_size
         )
