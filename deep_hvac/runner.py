@@ -72,13 +72,13 @@ def make_default_env(episode_length=24 * 30, terminate_on_discomfort=True,
 
     if discrete_action:
         env_name = (
-            f'DefaultBuilding-{capacitance}-v0-action-discrete-{season}-'
-            f'discomf-terminate-{terminate_on_discomfort}'
+            f'DefaultBuilding-{capacitance}-action-discrete-{season}-'
+            f'discomf-terminate-{terminate_on_discomfort}-v0'
         )
     else:
         env_name = (
             f'DefaultBuilding-{capacitance}-v0-action-continuous-{season}'
-            f'discomf-terminate-{terminate_on_discomfort}'
+            f'discomf-terminate-{terminate_on_discomfort}-v0'
         )
     logger.debug(f"Creating environment {env_name}.")
     config = simulator.SimConfig(
