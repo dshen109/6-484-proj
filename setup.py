@@ -6,7 +6,7 @@ setup(
     description='HVAC control using deep RL',
     author='Daniel Shen & Cale Gregory',
     packages=find_packages(),
-    python_requires='>=3.8',
+    python_requires='>=3.7',
     install_requires=[
         'gym',
         'openpyxl',
