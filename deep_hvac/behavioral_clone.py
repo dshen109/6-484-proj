@@ -88,7 +88,9 @@ def run_inference(
         agent, env, num_trials, return_on_done=False, sample=True):
     runner = EpisodicRunner(agent=agent, env=env)
     trajs = []
-    for _ in range(num_trials):
+    for i in range(num_trials):
+        if i and i % 10 == 0:
+            logger.debug(f"Running trial {i} of {num_trials}")
         env.reset()
         traj = runner(time_steps=cfg.alg.episode_steps,
                       sample=sample,
