@@ -33,7 +33,6 @@ def get_results(agent, env, episode_steps=30 * 24,
     """
     :param int time: Starting time for result plotting.
     """
-
     results = defaultdict(list)
     total_steps = 0
 
@@ -94,11 +93,19 @@ def make_default_env(episode_length=24 * 30, terminate_on_discomfort=True,
         '..', 'data'
     )
     logger.debug("Loading NSRDB data...")
-    nsrdb = NsrdbReader(os.path.join(datadir, '1704559_29.72_-95.35_2018.csv'))
+    nsrdb_path = os.environ.get(
+        'NSRDB_TRAINING',
+        os.path.join(datadir, '1704559_29.72_-95.35_2018.csv')
+    )
+    nsrdb = NsrdbReader(nsrdb_path)
     logger.debug("Finished loading NSRDB data.")
     logger.debug("Loading Houston price data...")
-    ercot = pd.read_pickle(os.path.join(
-        datadir, 'houston-2018-prices.pickle'))
+
+    ercot_path = os.environ.get(
+        'ERCOT_TRAINING',
+        os.path.join(datadir, 'houston-2018-prices.pickle')
+    )
+    ercot = pd.read_pickle(ercot_path)
     logger.debug("Finished loading price data.")
     zone, windows, latitude, longitude = default_building(capacitance)
 
