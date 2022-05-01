@@ -622,7 +622,7 @@ class SimEnv(Env):
             # Gotta vectorize...
             # Assume that inputs are 1d arrays
             n_obs = heating_setpoint.shape[0]
-            output = np.zeros((n_obs, 1, 1))
+            output = np.zeros((n_obs, 1, 1), dtype=int)
             setpoints = np.vstack(
                 [heating_setpoint, cooling_setpoint]).T
             setpoints = (setpoints - self.t_low).astype(int)
