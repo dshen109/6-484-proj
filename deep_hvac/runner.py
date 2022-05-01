@@ -104,7 +104,10 @@ def make_default_env(episode_length=24 * 30, terminate_on_discomfort=True,
         'ERCOT_TRAINING',
         os.path.join(datadir, 'houston-2018-prices.pickle')
     )
-    ercot = pd.read_pickle(ercot_path)
+    if '.pickle' in ercot_path:
+        ercot = pd.read_pickle(ercot_path)
+    else:
+        ercot = pd.read_csv(ercot_path, index_col=0, parse_dates=True)
     logger.debug("Finished loading price data.")
     zone, windows, latitude, longitude = default_building(capacitance)
 
