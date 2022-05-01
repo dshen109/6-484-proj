@@ -98,9 +98,8 @@ def make_default_env(episode_length=24 * 30, terminate_on_discomfort=True,
         os.path.join(datadir, '1704559_29.72_-95.35_2018.csv')
     )
     nsrdb = NsrdbReader(nsrdb_path)
-    logger.debug("Finished loading NSRDB data.")
+    logger.debug(f"Loaded NSRDB data from {nsrdb_path}")
     logger.debug("Loading Houston price data...")
-
     ercot_path = os.environ.get(
         'ERCOT_TRAINING',
         os.path.join(datadir, 'houston-2018-prices.pickle')
