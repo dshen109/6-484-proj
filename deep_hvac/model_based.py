@@ -83,7 +83,7 @@ class MPC:
             )
             actions = [self.sol_mean + new_dist.sample() for _ in range(self.es_popsize)]
             actions = torch.stack(actions)
-            qs = torch.tensor([q for _ in range(self.es_popsize)])
+            qs = torch.tensor(np.array([q for _ in range(self.es_popsize)]))
             trajs = self.model.run_batch_of_trajectories(qs, actions)[:, 1:]
 
             rewards = self.model.reward(trajs, actions)
@@ -112,6 +112,8 @@ class LearnedDynamicsModel:
         self.u_range = u_range
 
         self.discomfort_penalty = discomfort_penalty
+        self.comfort_praise = 0.1
+        self.action_bound_penalty = 10
 
         self.u_lb = torch.tensor([u_range[0]]).float()
         self.u_ub = torch.tensor([u_range[1]]).float()
@@ -129,7 +131,7 @@ class LearnedDynamicsModel:
         )
 
         self.optim = torch.optim.Adam(self.model.parameters())
-        self.loss = nn.HuberLoss()
+        self.loss = nn.MSELoss()
 
     def step(self, q, u):
         inp = torch.stack([q[:, 0], q[:, 1], q[:, 2], 
@@ -179,18 +181,100 @@ class LearnedDynamicsModel:
             self.optim.step()
 
     def reward(self, q, u):
-        #TODO: calculate reward by calling env 
-        electricity_cost = q[:, :, 16] * q[:, :, 17] / 1000
-        reward_from_price = -electricity_cost
+        if isinstance(q, list):
+            q = torch.tensor([q])
+            answers = torch.zeros((q.shape[0]), dtype=torch.float32)
+            i = 0
+            for ind_q in q:
+                electricity_cost = (ind_q[-1]/1000) * ind_q[-2]
+                t_air = ind_q[1]
+                t_set_heating, t_set_cooling = ind_u
+                
+                # If we have an expert, the reward is how much better we did than the
+                # expert
+                reward_from_expert_improvement = -electricity_cost
 
-        discomfs = np.zeros((q.shape[0], q.shape[1]))
-        q = q.detach()
-        for i in range(q.shape[0]):
-            for j in range(q.shape[1]):
-                discomfs[i, j] = self.comfort_penalty(q[i, j, 2], q[i, j, 8])
+                reward_from_discomfort = 0
+                discomf_score = 0
+                reward_from_comfort = 0
+                action_change_reward = 0
+                action_bound_violation_reward = False
 
-        discomfs = torch.from_numpy(discomfs)
-        return (discomfs * self.discomfort_penalty) + reward_from_price
+                discomf_score = self.comfort_penalty(t_air, ind_q[2])
+                reward_from_discomfort -= (
+                    discomf_score * self.discomfort_penalty
+                )
+                if discomf_score == 0:
+                    reward_from_comfort += self.comfort_praise
+
+                if not self.action_valid(t_set_heating, t_set_cooling):
+                    action_bound_violation_reward -= self.action_bound_penalty
+
+                reward = (
+                    reward_from_expert_improvement + reward_from_discomfort +
+                    reward_from_comfort + action_bound_violation_reward +
+                    action_change_reward
+                )
+                answers[traj][i] = reward
+
+                i+=1
+
+            return answers
+            
+
+        answers = torch.zeros((q.shape[0], q.shape[1]))
+
+        for traj in range(q.shape[0]):
+            qs, us, i = q[traj], u[traj], 0
+            for ind_q, ind_u in zip(qs, us):
+                electricity_cost = (ind_q[-1]/1000) * ind_q[-2]
+                t_air = ind_q[1]
+                t_set_heating, t_set_cooling = ind_u
+                
+                # If we have an expert, the reward is how much better we did than the
+                # expert
+                reward_from_expert_improvement = -electricity_cost
+
+                reward_from_discomfort = 0
+                discomf_score = 0
+                reward_from_comfort = 0
+                action_change_reward = 0
+                action_bound_violation_reward = False
+
+                discomf_score = self.comfort_penalty(t_air, ind_q[2])
+                reward_from_discomfort -= (
+                    discomf_score * self.discomfort_penalty
+                )
+                if discomf_score == 0:
+                    reward_from_comfort += self.comfort_praise
+
+                if not self.action_valid(t_set_heating, t_set_cooling):
+                    action_bound_violation_reward -= self.action_bound_penalty
+
+                reward = (
+                    reward_from_expert_improvement + reward_from_discomfort +
+                    reward_from_comfort + action_bound_violation_reward +
+                    action_change_reward
+                )
+                answers[traj][i] = reward
+
+                i+=1
+
+        return answers
+
+
+    def comfort_penalty(self, t_air, outdoor):
+        t_comf = comfort_temperature(outdoor)
+        deviation = np.abs(t_air - t_comf)
+        if deviation <= 2.5:
+            return 0
+        elif deviation <= 3.5:
+            return np.interp(deviation, [2.5, 3.5], [0.5, 1])
+        else:
+            return deviation - 2.5
+
+    def action_valid(self, t_set_heating, t_set_cooling):
+        return t_set_heating < t_set_cooling
         
 
     def comfort_penalty(self, outdoor, t_air):
@@ -210,14 +294,30 @@ class LearnedDynamicsModel:
         else:
             return deviation - 2.5
 
+    def get_avg_hourly_price(self, timestamp):
+        """
+        Calculates the average price of electricity for the current hour.
+
+        :return: Price in $/kWh
+        """
+        if isinstance(timestamp, int):
+            timestamp = self.get_timestamp(timestamp)
+        return self.prices.loc[
+            timestamp:timestamp + dt.timedelta(minutes=59),
+            'Settlement Point Price'].mean() / 1000
+
+    def is_occupied(self, timestamp):
+        is_weekday = timestamp.weekday() < 5
+        hour = timestamp.hour
+
+        return is_weekday and (hour >= 8 and hour <= 6 + 12)
+
 def test_MPC_ground_truth():
     env = BuildingGym()
     mpc = MPC(BuildingDynamics(), horizon = 25, es_popsize=200)
 
-    qs, expert_pricing = [], []
+    qs, us, expert_pricing = [], [], []
     q = env.reset()
-    print('Q HERE: ')
-    print(q)
     done = False 
     complete_r = 0
     i = 0
@@ -225,29 +325,43 @@ def test_MPC_ground_truth():
         print('Step: {:d}'.format(i))
         i+=1
         qs.append(q)
-        q, r, done, _ = env.step(mpc.action(q))
+        u = mpc.action(q)
+        us.append(u)
+        q, r, done, info = env.step(u)
         complete_r += r
+        expert_pricing.append(info['last_expert'])
+
+        print('COMPLETE_R: ')
+        print(complete_r)
+        print('Elec Consumed price: ')
+        print((q[-1]/1000) * q[-2])
+        print('Expert elec: ')
+        print(info['last_expert'])
 
     print("GROUND TRUTH REWARD: " + str(complete_r))
     qs = np.array(qs, dtype=np.float32)
+    print([u.numpy() for u in us])
+    us = np.array([u.numpy() for u in us])
     
-    # data_dict = {
-    #     'set_heating': [[i for i in range(720//5)], qs[::5, env.state_idx['heating_setpoint']]], 
-    #     'set_cooling': [[i for i in range(720//5)], qs[::5, env.state_idx['cooling_setpoint']]],
-    # }
-    # plot_curves(data_dict, "Ground Truth MPC", ylabel="Temp")
+    episode_length = len(us[:, 0])
 
     data_dict = {
-        'outside_temp': [[i for i in range(720//5)], qs[::5, 2]],
-        'inside_temp': [[i for i in range(720//5)], qs[::5, 1]],
+        'set_heating': [[i for i in range(episode_length)], us[:, 0]], 
+        'set_cooling': [[i for i in range(episode_length)], us[:, 1]],
+    }
+    plot_curves(data_dict, "Ground Truth MPC", ylabel="Temp")
+
+    data_dict = {
+        'outside_temp': [[i for i in range(episode_length)], qs[:, 3]],
+        'inside_temp': [[i for i in range(episode_length)], qs[:, 2]],
     }
     plot_curves(data_dict, "Ground Truth MPC", ylabel="Temp")
     
-    # data_dict = {
-    #     'price_paid' : [[i for i in range(720)], qs[:, env.state_idx['electricity_consumed']] * qs[:, env.state_idx['price_previous']]],
-    #     'expert_paid': [[i for i in range(720)], expert_pricing],
-    # }
-    # plot_curves(data_dict, "Ground Truth MPC", ylabel="$")
+    data_dict = {
+        'price_paid' : [[i for i in range(episode_length)], qs[:, -1] * qs[:, -2]],
+        'expert_paid': [[i for i in range(episode_length)], expert_pricing],
+    }
+    plot_curves(data_dict, "Ground Truth MPC", ylabel="$")
 
 def test_MPC_learned_model():
     e, building = make_default_env(discrete_action=False)

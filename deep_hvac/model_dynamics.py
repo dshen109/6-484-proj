@@ -1,3 +1,5 @@
+from multiprocessing.sharedctypes import Value
+from time import time
 import torch, os, sys, gym
 import numpy as np
 import pandas as pd
@@ -5,7 +7,7 @@ import datetime as dt
 import random
 
 from deep_hvac import agent, logger, simulator
-from deep_hvac.building import default_building
+from deep_hvac.building import default_building, comfort_temperature
 from deep_hvac.util import NsrdbReader, sun_position
 
 datadir = os.path.join(
@@ -21,14 +23,38 @@ ercot = pd.read_pickle(os.path.join(
 logger.debug("Finished loading price data.")
 zone, windows, latitude, longitude = default_building()
 
+config = simulator.SimConfig(
+    episode_length=24,
+    terminate_on_discomfort=True,
+    discomfort_penalty=1e4,
+    discrete_action=False
+)
+
 env_args = dict(
     prices=ercot,
     weather=nsrdb.weather_hourly,
     coords=(latitude, longitude),
     zone=zone,
     windows=windows,
-    expert_performance=None
+    expert_performance=None,
+    agent=None,
+    config = config
 )
+
+# Run the naive agent as a baseline.
+naive_agent = agent.NaiveAgent()
+env = simulator.SimEnv(**env_args)
+logger.debug("Running naive baseline...")
+obs = env.reset(0)
+for _ in range(365 * 24 - 2):
+    obs, _, terminate, _ = env.step(naive_agent.get_action(obs)[0])
+costs = env.results['electricity_cost']
+# pad with zeros
+costs.insert(0, 0)
+costs.append(0)
+env_args['expert_performance'] = pd.DataFrame(
+    costs, columns=['cost'], index=nsrdb.weather_hourly.index)
+env.results['expert_performance'] = env_args['expert_performance']
 
 class BuildingDynamics:
 
@@ -46,6 +72,14 @@ class BuildingDynamics:
         self.weather = self.env_args['weather'].reset_index()
         self.prices = self.env_args['prices']
         self.u_range = u_range
+
+        self.expert_price_last = 0
+
+        self.discomfort_penalty = 1000
+        self.comfort_praise = 0.1
+        self.action_bound_penalty = 10
+
+        self.expert_performance = self.env_args['expert_performance']
 
         self.u_lb = torch.tensor([10]).float()
         self.u_ub = torch.tensor([40]).float()
@@ -151,14 +185,121 @@ class BuildingDynamics:
         ]
 
     def reward(self, q, u):
-        return torch.tensor([[random.random()] for _ in range(len(q))]).float()
+        if isinstance(q, list):
+            q = torch.tensor([q])
+            answers = torch.zeros((q.shape[0]), dtype=torch.float32)
+            i = 0
+            for ind_q in q:
+                cur_timestamp, _ = self.get_timestamp_and_weather(int(ind_q[0]))
+                electricity_cost = (ind_q[-1]/1000) * ind_q[-2]
+                t_air = ind_q[1]
+                t_set_heating, t_set_cooling = u
+                
+                # If we have an expert, the reward is how much better we did than the
+                # expert
+                reward_from_expert_improvement = (
+                    self.expert_price_paid(cur_timestamp) - electricity_cost)
+
+                reward_from_discomfort = 0
+                discomf_score = 0
+                reward_from_comfort = 0
+                action_change_reward = 0
+                action_bound_violation_reward = False
+
+                if self.is_occupied(cur_timestamp):
+                    discomf_score = self.comfort_penalty(t_air, ind_q[2])
+                    reward_from_discomfort -= (
+                        discomf_score * self.discomfort_penalty
+                    )
+                    if discomf_score == 0:
+                        reward_from_comfort += self.comfort_praise
+
+                if not self.action_valid(t_set_heating, t_set_cooling):
+                    action_bound_violation_reward -= self.action_bound_penalty
+
+                reward = (
+                    reward_from_expert_improvement + reward_from_discomfort +
+                    reward_from_comfort + action_bound_violation_reward +
+                    action_change_reward
+                )
+                answers[i] = reward
+
+                i+=1
+
+            return answers
+            
+
+        answers = torch.zeros((q.shape[0], q.shape[1]))
+
+        for traj in range(q.shape[0]):
+            qs, us, i = q[traj], u[traj], 0
+            for ind_q, ind_u in zip(qs, us):
+                cur_timestamp, _ = self.get_timestamp_and_weather(int(ind_q[0]))
+                electricity_cost = (ind_q[-1]/1000) * ind_q[-2]
+                t_air = ind_q[1]
+                t_set_heating, t_set_cooling = ind_u
+                
+                # If we have an expert, the reward is how much better we did than the
+                # expert
+                reward_from_expert_improvement = (
+                    self.expert_price_paid(cur_timestamp) - electricity_cost)
+
+                self.expert_price_last = self.expert_price_paid
+
+                reward_from_discomfort = 0
+                discomf_score = 0
+                reward_from_comfort = 0
+                action_change_reward = 0
+                action_bound_violation_reward = False
+
+                if self.is_occupied(cur_timestamp):
+                    discomf_score = self.comfort_penalty(t_air, ind_q[2])
+                    reward_from_discomfort -= (
+                        discomf_score * self.discomfort_penalty
+                    )
+                    if discomf_score == 0:
+                        reward_from_comfort += self.comfort_praise
+
+                if not self.action_valid(t_set_heating, t_set_cooling):
+                    action_bound_violation_reward -= self.action_bound_penalty
+
+                reward = (
+                    reward_from_expert_improvement + reward_from_discomfort +
+                    reward_from_comfort + action_bound_violation_reward +
+                    action_change_reward
+                )
+                answers[traj][i] = reward
+
+                i+=1
+
+        return answers
+
+
+    def comfort_penalty(self, t_air, outdoor):
+        t_comf = comfort_temperature(outdoor)
+        deviation = np.abs(t_air - t_comf)
+        if deviation <= 2.5:
+            return 0
+        elif deviation <= 3.5:
+            return np.interp(deviation, [2.5, 3.5], [0.5, 1])
+        else:
+            return deviation - 2.5
+
+    def action_valid(self, t_set_heating, t_set_cooling):
+        return t_set_heating < t_set_cooling
+
+    def expert_price_paid(self, timestamp):
+        if self.expert_performance is None:
+            return 0
+        else:
+            return self.expert_performance.loc[timestamp, 'cost']
 
 class BuildingGym(gym.Env):
 
     def __init__(self, timestep_limit=200):
         self.dynamics = BuildingDynamics()
 
-        self.timestep_limit = 720
+        self.timestep_limit = 24
         self.reset()
 
     def reset(self, time=None):
@@ -205,7 +346,7 @@ class BuildingGym(gym.Env):
 
         self.traj.append(self.q_sim)
         
-        return self.q_sim, reward, done, {}
+        return self.q_sim, reward, done, {'last_expert': self.dynamics.expert_price_last}
 
     def is_done(self):
         # Kill trial when too much time has passed
