@@ -1,9 +1,18 @@
-from operator import is_
 from deep_hvac import building
 from deep_hvac.simulator import SimEnv
 
 from easyrl.agents.base_agent import BaseAgent
+from easyrl.configs import cfg
+from easyrl.envs.dummy_vec_env import DummyVecEnv
+from easyrl.models.categorical_policy import CategoricalPolicy
+from easyrl.models.mlp import MLP
+from easyrl.utils.torch_util import (
+    action_entropy, action_from_dist, action_log_prob, move_to,
+    torch_float, torch_to_np
+)
 import numpy as np
+import torch
+from torch import nn
 
 
 class NaiveAgent(BaseAgent):
@@ -75,3 +84,57 @@ class AshraeComfortAgent(BaseAgent):
         else:
             action = [comfort_t - 3.5, comfort_t + 3.5]
         return action, None
+
+
+class BasicCategoricalAgentStateSubset(BaseAgent):
+    """
+    Agent that takes a subset of the state observations and returns
+    a categorical action.
+    """
+
+    def __init__(self, state_indices, env, **kwargs):
+        self.state_indices = state_indices
+        super().__init__(env=env)
+
+        # Make actor
+        if isinstance(env, DummyVecEnv):
+            self.action_size = env.envs[0].action_size
+        else:
+            self.action_size = env.action_size
+        self.ob_size_env = env.observation_space.space[0]
+        self.ob_size = len(state_indices)
+
+        self._make_actor()
+
+    def _make_actor(self):
+        body = MLP(input_size=self.ob_size,
+                   hidden_sizes=[256, 256],
+                   output_size=256,
+                   hidden_act=nn.Tanh,
+                   output_act=nn.Tanh)
+        self.actor = CategoricalPolicy(
+            body_net=body,
+            in_features=256,
+            action_dim=self.action_size
+        )
+
+    def __post_init__(self):
+        move_to([self.actor],
+                device=cfg.alg.device)
+
+    @torch.no_grad()
+    def get_action(self, ob, sample=True, *args, **kwargs):
+        t_ob = torch_float(ob, device=cfg.alg.device)
+        act_dist, _ = self.actor(t_ob)
+        # sample from the distribution
+        action = action_from_dist(act_dist,
+                                  sample=sample)
+        # get the log-probability of the sampled actions
+        log_prob = action_log_prob(action, act_dist)
+        # get the entropy of the action distribution
+        entropy = action_entropy(act_dist, log_prob)
+        action_info = dict(
+            log_prob=torch_to_np(log_prob),
+            entropy=torch_to_np(entropy),
+        )
+        return torch_to_np(action), action_info
