@@ -124,6 +124,13 @@ class BasicCategoricalAgentStateSubset(BaseAgent):
 
     @torch.no_grad()
     def get_action(self, ob, sample=True, *args, **kwargs):
+        if len(ob.shape) == 1:
+            ob = ob[self.state_indices]
+        elif len(ob.shape) == 3:
+            ob = ob[:, :, self.state_indices]
+        else:
+            raise RuntimeError
+
         t_ob = torch_float(ob, device=cfg.alg.device)
         act_dist, _ = self.actor(t_ob)
         # sample from the distribution
