@@ -1,6 +1,7 @@
 from collections import defaultdict
 import datetime as dt
 import itertools
+import warnings
 
 from gym import Env, spaces
 import numpy as np
@@ -65,7 +66,7 @@ class SimEnv(Env):
     occupancy_lookahead = 3
     # Absolute lower and upper bounds for action
     t_low = 10
-    t_high = 40
+    t_high = 35
     # Number of actions if discrete
     n_actions_discrete = int((t_high - t_low) * (t_high - t_low + 1) / 2)
 
@@ -270,6 +271,9 @@ class SimEnv(Env):
         self.t_set_heating_prev = self.zone.t_set_heating
         self.t_set_cooling_prev = self.zone.t_set_cooling
 
+        if not np.isscalar(action) and self.config.discrete_action:
+            warnings.warn(
+                f"Env expects discrete action but received {action}.")
         if np.isscalar(action):
             action = self.discrete_action_to_setpoints(action)
 
@@ -378,7 +382,7 @@ class SimEnv(Env):
             self.zone.cooling_sys_electricity
         )
 
-        return [
+        return np.array([
             self.zone.t_set_heating,
             self.zone.t_set_cooling,
             self.t_set_heating_prev,
@@ -397,8 +401,8 @@ class SimEnv(Env):
             self.get_timestamp(self.time).weekday(),
             self.get_avg_hourly_price(self.get_timestamp(self.time - 1)),
             self.electricity_consumed,
-            self.price_indicator(self.time)
-        ] + occupancy
+            self.price_indicator(self.time)] + occupancy
+        )
 
     def get_obs(self):
         return self.get_state()
@@ -635,7 +639,6 @@ class SimEnv(Env):
                     raise KeyError(f"{tuple(setpoints[i, :])} not in "
                                    "action space.")
             return output
-
 
     def _map_discrete_actions(self):
         """Create action map for discrete actions and cache."""
