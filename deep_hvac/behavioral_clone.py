@@ -75,8 +75,8 @@ def train_bc_agent(agent, trajs, max_epochs=5000, batch_size=256, lr=0.0005,
             avg_loss.append(loss.item())
         logs['loss'].append(np.mean(avg_loss))
         logs['epoch'].append(iter)
-        if iter and iter % 100 == 0:
-            logger.debug(f"Iteration {iter} of {max_epochs}")
+        if iter and (iter + 1) % 100 == 0:
+            logger.debug(f"Iteration {iter + 1} of {max_epochs}")
     return agent, logs, len(dataset)
 
 
