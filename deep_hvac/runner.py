@@ -1,3 +1,4 @@
+import calendar
 from collections import defaultdict
 import os
 
@@ -10,6 +11,12 @@ from gym.envs.registration import registry, register
 import pandas as pd
 
 
+_months_to_int = {
+    month.lower(): index for index, month
+    in enumerate(calendar.month_abbr) if month
+}
+
+
 def run_episode(agent, env, episode_steps, time=0):
     """
     :param Agent agent:
@@ -20,10 +27,13 @@ def run_episode(agent, env, episode_steps, time=0):
     env.reset(time=time)
     for _ in range(episode_steps):
         action, _ = agent.get_action(env.get_obs())
-        # agent.get_action returns an action for each environment, so just
-        # take the first one
+        if len(action.shape) == 2:
+            action = action.squeeze(0)
         if env.config.discrete_action:
-            action = action.item()
+            try:
+                action = action.item()
+            except ValueError:
+                pass
         env.step(action)
     return env.results
 
@@ -57,9 +67,12 @@ def make_default_env(episode_length=24 * 30, terminate_on_discomfort=True,
     """
     Register a default environment
 
+    :param str season: season description or specific month.
     :param bool create_expert: Whether or not to create an expert.
     :return Env: Registered environment
     """
+    if season is not None:
+        season = season.lower()
     if season is None:
         season = 'yearround'
         env_months = None
@@ -67,6 +80,8 @@ def make_default_env(episode_length=24 * 30, terminate_on_discomfort=True,
         env_months = (7, 8, 9)
     elif season == 'winter':
         env_months = (1, 2, 12)
+    elif season in _months_to_int:
+        env_months = (_months_to_int[season], )
     else:
         raise ValueError("Unknown season")
 
