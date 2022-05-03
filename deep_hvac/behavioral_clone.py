@@ -60,16 +60,22 @@ def train_bc_agent(agent, trajs, max_epochs=5000, batch_size=256, lr=0.0005,
         for batch_idx, sample in enumerate(dataloader):
             states = sample['state'].float().to(cfg.alg.device)
             expert_actions = sample['action'].float().to(cfg.alg.device)
-            # Convert continuous expert actions to discrete case
+            # Convert continuous expert actions to discrete case and use KL
+            # loss
+            optimizer.zero_grad()
             if agent_discrete:
                 expert_actions = torch.tensor(
                     env.continuous_action_to_discrete(
                         expert_actions[:, 0, 0], expert_actions[:, 0, 1]
                     )
                 )
-            optimizer.zero_grad()
-            action_dist, _ = agent.actor(states)
-            loss = - (action_dist.log_prob(expert_actions)).mean()
+                action_dist, _ = agent.actor(states)
+                expert_dist = _expert_action_to_distribution(
+                    expert_actions, n_categories=action_dist.logits.shape[2])
+                loss = torch.distributions.kl.kl_divergence(
+                    expert_dist, action_dist).mean()
+            else:
+                raise NotImplementedError
             loss.backward()
             optimizer.step()
             avg_loss.append(loss.item())
@@ -112,3 +118,12 @@ def set_configs(env_name, exp_name='bc', seed=0):
     cfg.alg.save_dir = Path.cwd().absolute().joinpath('data').as_posix()
     cfg.alg.save_dir += f'/{exp_name}'
     setattr(cfg.alg, 'diff_cfg', dict(save_dir=cfg.alg.save_dir))
+
+
+def _expert_action_to_distribution(actions, n_categories):
+
+    probs = torch.zeros((actions.shape[0], 1, n_categories))
+    for action in actions.unique():
+        rows = (actions == action).nonzero(as_tuple=True)[0]
+        probs[rows, :, action] = 1
+    return torch.distributions.Categorical(probs=probs)
