@@ -1,10 +1,10 @@
 from deep_hvac import building
+from deep_hvac.models.categorical_policy import CategoricalPolicyFiltering
 from deep_hvac.simulator import SimEnv
 
 from easyrl.agents.base_agent import BaseAgent
 from easyrl.configs import cfg
 from easyrl.envs.dummy_vec_env import DummyVecEnv
-from easyrl.models.categorical_policy import CategoricalPolicy
 from easyrl.models.mlp import MLP
 from easyrl.utils.torch_util import (
     action_entropy, action_from_dist, action_log_prob, move_to,
@@ -92,8 +92,10 @@ class BasicCategoricalAgentStateSubset(BaseAgent):
     a categorical action.
     """
 
-    def __init__(self, state_indices, env, **kwargs):
+    def __init__(self, state_indices, env, actor=None, hidden_size=256,
+                 **kwargs):
         self.state_indices = state_indices
+        self.hidden_size = hidden_size
         super().__init__(env=env)
 
         # Make actor
@@ -101,20 +103,24 @@ class BasicCategoricalAgentStateSubset(BaseAgent):
             self.action_size = env.envs[0].action_size
         else:
             self.action_size = env.action_size
-        self.ob_size_env = env.observation_space.space[0]
+        self.ob_size_env = env.observation_space.shape[0]
         self.ob_size = len(state_indices)
 
-        self._make_actor()
+        if actor is None:
+            self._make_actor()
+        else:
+            self.actor = actor
 
     def _make_actor(self):
         body = MLP(input_size=self.ob_size,
-                   hidden_sizes=[256, 256],
-                   output_size=256,
+                   hidden_sizes=[self.hidden_size, self.hidden_size],
+                   output_size=self.hidden_size,
                    hidden_act=nn.Tanh,
                    output_act=nn.Tanh)
-        self.actor = CategoricalPolicy(
+        self.actor = CategoricalPolicyFiltering(
+            state_indices=self.state_indices,
             body_net=body,
-            in_features=256,
+            in_features=self.hidden_size,
             action_dim=self.action_size
         )
 
@@ -124,15 +130,16 @@ class BasicCategoricalAgentStateSubset(BaseAgent):
 
     @torch.no_grad()
     def get_action(self, ob, sample=True, *args, **kwargs):
+
         if len(ob.shape) == 1:
-            ob = ob[self.state_indices]
+            ob = ob.reshape((1, -1))[:, self.state_indices].squeeze(0)
         elif len(ob.shape) == 3:
             ob = ob[:, :, self.state_indices]
         else:
             raise RuntimeError
 
         t_ob = torch_float(ob, device=cfg.alg.device)
-        act_dist, _ = self.actor(t_ob)
+        act_dist, _ = self.actor(t_ob, filtered=True)
         # sample from the distribution
         action = action_from_dist(act_dist,
                                   sample=sample)
