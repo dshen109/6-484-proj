@@ -1,5 +1,5 @@
 from deep_hvac import building
-from deep_hvac.models.categorical_policy import CategoricalPolicyFiltering
+from deep_hvac.models import CategoricalPolicyFiltering, DiagGaussianPolicyFiltering
 from deep_hvac.simulator import SimEnv
 
 from easyrl.agents.base_agent import BaseAgent
@@ -86,16 +86,17 @@ class AshraeComfortAgent(BaseAgent):
         return action, None
 
 
-class BasicCategoricalAgentStateSubset(BaseAgent):
+class BasicAgentStateSubset(BaseAgent):
     """
-    Agent that takes a subset of the state observations and returns
-    a categorical action.
+    Agent that takes a subset of the state observations to return
+    an action.
     """
 
     def __init__(self, state_indices, env, actor=None, hidden_size=256,
-                 **kwargs):
+                 categorical=True, **kwargs):
         self.state_indices = state_indices
         self.hidden_size = hidden_size
+        self.categorical = categorical
         super().__init__(env=env)
 
         # Make actor
@@ -117,12 +118,20 @@ class BasicCategoricalAgentStateSubset(BaseAgent):
                    output_size=self.hidden_size,
                    hidden_act=nn.Tanh,
                    output_act=nn.Tanh)
-        self.actor = CategoricalPolicyFiltering(
-            state_indices=self.state_indices,
-            body_net=body,
-            in_features=self.hidden_size,
-            action_dim=self.action_size
-        )
+        if self.categorical:
+            self.actor = CategoricalPolicyFiltering(
+                state_indices=self.state_indices,
+                body_net=body,
+                in_features=self.hidden_size,
+                action_dim=self.action_size
+            )
+        else:
+            self.actor = DiagGaussianPolicyFiltering(
+                state_indices=self.state_indices,
+                body_net=body,
+                in_features=self.hidden_size,
+                actio_dim=self.action_size
+            )
 
     def __post_init__(self):
         move_to([self.actor],
@@ -130,16 +139,8 @@ class BasicCategoricalAgentStateSubset(BaseAgent):
 
     @torch.no_grad()
     def get_action(self, ob, sample=True, *args, **kwargs):
-
-        if len(ob.shape) == 1:
-            ob = ob.reshape((1, -1))[:, self.state_indices].squeeze(0)
-        elif len(ob.shape) == 3:
-            ob = ob[:, :, self.state_indices]
-        else:
-            raise RuntimeError
-
         t_ob = torch_float(ob, device=cfg.alg.device)
-        act_dist, _ = self.actor(t_ob, filtered=True)
+        act_dist, _ = self.actor(t_ob)
         # sample from the distribution
         action = action_from_dist(act_dist,
                                   sample=sample)
