@@ -21,16 +21,21 @@ import gym
 def train_ppo(env_name='DefaultBuilding-v0', max_steps=100000,
               policy_lr=3e-4, value_lr=1e-3, gae_lambda=0.95,
               rew_discount=0.99, seed=0, max_decay_steps=1e6,
-              save_dir=None, train=True):
+              save_dir=None, train=True, actor=None):
     """
     Note that the environment name must already be registered before running
     this.
+
+    :param str save_dir: save directory in data/ otherwise environment
+        name will be used.
+    :param bool train: Whether to run training.
+    :param nn.module actor: Optional pretrained actor.
     """
     set_config('ppo')
     cfg.alg.num_envs = 1
     cfg.alg.seed = seed
 
-    cfg.alg.episode_steps = 24 * 30 * 10
+    cfg.alg.episode_steps = 24 * 30
     cfg.alg.log_interval = 1
     cfg.alg.eval_interval = 20
 
@@ -67,8 +72,9 @@ def train_ppo(env_name='DefaultBuilding-v0', max_steps=100000,
         action_categorical = False
     else:
         raise TypeError(f'Unknown action space type: {env.action_space}')
-    actor = make_actor(ob_size, env.envs[0].action_size,
-                       categorical=action_categorical)
+    if actor is None:
+        actor = make_actor(ob_size, env.envs[0].action_size,
+                           categorical=action_categorical)
 
     critic = make_critic(ob_size)
     agent = PPOAgent(actor=actor, critic=critic, env=env)
