@@ -16,8 +16,8 @@ class SimConfig():
     def __init__(self, episode_length=24 * 30,
                  terminate_on_discomfort=True,
                  partial_discomfort_penalty=1,
-                 discomfort_penalty=100, action_bound_penalty=1000,
-                 discrete_action=False, action_change_penalty=0.1,
+                 discomfort_penalty=500, action_bound_penalty=1000,
+                 discrete_action=False, action_change_penalty=1,
                  comfort_praise=1, price_indicator=True,
                  price_indicator_confidence=0.667, reset_months=None,
                  terminal_reward_multiplier=10):
