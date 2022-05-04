@@ -20,8 +20,10 @@ def train_ppo_agent(env_name, max_steps=100000, policy_lr=3e-4, value_lr=1e-3,
 
 def run(seed, season, continuous_action, max_steps, make_plots, construction):
     logger.log("Making env...")
-    if os.path.exists(f'data/results-expert-{construction}.pickle'):
-        expert_performance = f'data/results-expert-{construction}.pickle'
+    if os.path.exists(
+            f'data/results-expert-{construction}-{season}.pickle'):
+        expert_performance = \
+            f'data/results-expert-{construction}-{season}.pickle'
     else:
         expert_performance = None
     env, env_name = make_default_env(

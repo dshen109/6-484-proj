@@ -2,7 +2,7 @@ import pathlib
 import os
 
 from deep_hvac import behavioral_clone, logger, runner
-from deep_hvac.agent import BasicCategoricalAgentStateSubset, NaiveAgent
+from deep_hvac.agent import BasicAgentStateSubset, NaiveAgent
 from deep_hvac.simulator import SimEnv
 
 from easyrl.utils.gym_util import make_vec_env
@@ -13,7 +13,7 @@ import torch
 
 def mimic(env_name, actor=None, hidden_size=126):
     env = make_vec_env(env_name, 1, 0).envs[0]
-    return BasicCategoricalAgentStateSubset(
+    return BasicAgentStateSubset(
         state_indices=(
             SimEnv.state_idx['hour'],
             SimEnv.state_idx['weekday'],
@@ -25,7 +25,7 @@ def mimic(env_name, actor=None, hidden_size=126):
 if __name__ == '__main__':
     scriptdir = pathlib.Path(__file__).parent.resolve()
 
-    plot_performace = True
+    plot_performance = True
     season = 'aug'
     trajectory_file = os.path.join(
         scriptdir, 'fixtures', f'expert-traj-{season}.pt'
@@ -63,7 +63,7 @@ if __name__ == '__main__':
         max_epochs=max_epochs)
     torch.save(agent_cloned.actor, cloned_agent_save)
 
-    if plot_performace:
+    if plot_performance:
         actor = torch.load(cloned_agent_save)
         agent_cloned = mimic(env_name, actor)
         logger.log("Generating agent evaluation results")
