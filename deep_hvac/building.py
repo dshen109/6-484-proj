@@ -1,4 +1,5 @@
-import os, sys
+import os
+import sys
 
 sim_dir = os.path.join(
         os.path.split(os.path.abspath(__file__))[0],
@@ -64,9 +65,13 @@ def default_building(thermal_capacitance='medium'):
 
     n_occupants = int(10.76 * (3 * single_floor_area) / OFFICE_OCCUPANCY)
     capacitance = internal_capacitance[thermal_capacitance]
+    window_area = (
+        WINDOW_AREA_NORTH + WINDOW_AREA_EAST + WINDOW_AREA_SOUTH +
+        WINDOW_AREA_WEST
+    )
 
     params = dict(
-        window_area=653,
+        window_area=window_area,
         walls_area=gross_wall_area,
         floor_area=single_floor_area * 2,
         room_vol=volume,
