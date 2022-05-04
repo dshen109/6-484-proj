@@ -1,5 +1,9 @@
+from dataclasses import dataclass
+
 from deep_hvac import building
-from deep_hvac.models import CategoricalPolicyFiltering, DiagGaussianPolicyFiltering
+from deep_hvac.models import (
+    CategoricalPolicyFiltering, DiagGaussianPolicyFiltering
+)
 from deep_hvac.simulator import SimEnv
 
 from easyrl.agents.base_agent import BaseAgent
@@ -10,6 +14,7 @@ from easyrl.utils.torch_util import (
     action_entropy, action_from_dist, action_log_prob, move_to,
     torch_float, torch_to_np
 )
+import gym
 import numpy as np
 import torch
 from torch import nn
@@ -73,17 +78,40 @@ class AshraeComfortAgent(BaseAgent):
         if isinstance(observation, (list, tuple)):
             observation = np.array(observation)
 
-        outdoor_temperature = observation[2]
-        is_occupied = observation[SimEnv.state_idx['occupancy_ahead_0']]
-        comfort_t = building.comfort_temperature(outdoor_temperature)
+        comfort_t = building.comfort_temperature(outdoor_temperature).item()
 
-        action = np.zeros((observation.shape[0], 2))
-
-        if is_occupied:
-            action = [comfort_t - 2.5, comfort_t + 2.5]
+        if is_occupied.item():
+            action = np.array([comfort_t - 2.5, comfort_t + 2.5])
         else:
-            action = [comfort_t - 3.5, comfort_t + 3.5]
+            action = np.array([comfort_t - 3.5, comfort_t + 3.5])
         return action, None
+
+
+@dataclass
+class BasicAgent:
+    actor: nn.Module
+    env: gym.Env
+
+    def __post_init__(self):
+        move_to([self.actor],
+                device=cfg.alg.device)
+
+    @torch.no_grad()
+    def get_action(self, ob, sample=True, *args, **kwargs):
+        t_ob = torch_float(ob, device=cfg.alg.device)
+        act_dist, _ = self.actor(t_ob)
+        # sample from the distribution
+        action = action_from_dist(act_dist,
+                                  sample=sample)
+        # get the log-probability of the sampled actions
+        log_prob = action_log_prob(action, act_dist)
+        # get the entropy of the action distribution
+        entropy = action_entropy(act_dist, log_prob)
+        action_info = dict(
+            log_prob=torch_to_np(log_prob),
+            entropy=torch_to_np(entropy),
+        )
+        return torch_to_np(action), action_info
 
 
 class BasicAgentStateSubset(BaseAgent):
