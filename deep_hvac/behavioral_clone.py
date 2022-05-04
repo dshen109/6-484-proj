@@ -83,6 +83,7 @@ def train_bc_agent(agent, trajs, max_epochs=5000, batch_size=256, lr=0.0005,
         logs['epoch'].append(iter)
         if iter and (iter + 1) % 100 == 0:
             logger.debug(f"Iteration {iter + 1} of {max_epochs}")
+            logger.debug(f"The loss is {np.mean(avg_loss)}")
     return agent, logs, len(dataset)
 
 
@@ -98,7 +99,7 @@ def run_inference(
         if i and i % 10 == 0:
             logger.debug(f"Running trial {i} of {num_trials}")
         env.reset()
-        traj = runner(time_steps=cfg.alg.episode_steps,
+        traj = runner(time_steps=24 * 30 - 2,
                       sample=sample,
                       return_on_done=return_on_done,
                       evaluation=True,
@@ -111,7 +112,6 @@ def set_configs(env_name, exp_name='bc', seed=0):
     set_config('ppo')
     cfg.alg.seed = seed
     cfg.alg.num_envs = 1
-    cfg.alg.episode_steps = 24 * 30
     cfg.alg.max_steps = 600000
     cfg.alg.device = 'cuda' if torch.cuda.is_available() else 'cpu'
     cfg.alg.env_name = env_name
