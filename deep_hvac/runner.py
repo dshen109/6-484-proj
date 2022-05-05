@@ -63,7 +63,8 @@ def update_results(results, ep_results):
 def make_default_env(episode_length=24 * 30, terminate_on_discomfort=True,
                      discomfort_penalty=1e4, discrete_action=True,
                      expert_performance=None, season=None,
-                     capacitance='medium', create_expert=True):
+                     capacitance='medium', create_expert=True,
+                     action_change_penalty=1):
     """
     Register a default environment
 
@@ -101,7 +102,8 @@ def make_default_env(episode_length=24 * 30, terminate_on_discomfort=True,
         terminate_on_discomfort=terminate_on_discomfort,
         discomfort_penalty=discomfort_penalty,
         discrete_action=discrete_action,
-        reset_months=env_months
+        reset_months=env_months,
+        action_change_penalty=action_change_penalty
     )
     datadir = os.path.join(
         os.path.split(os.path.abspath(__file__))[0],
