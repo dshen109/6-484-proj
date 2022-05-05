@@ -21,7 +21,8 @@ import gym
 def train_ppo(env_name='DefaultBuilding-v0', max_steps=100000,
               policy_lr=3e-4, value_lr=1e-3, gae_lambda=0.95,
               rew_discount=0.99, seed=0, max_decay_steps=1e6,
-              save_dir=None, train=True, actor=None):
+              save_dir=None, train=True, actor=None, max_saved_models=4,
+              ):
     """
     Note that the environment name must already be registered before running
     this.
@@ -37,7 +38,8 @@ def train_ppo(env_name='DefaultBuilding-v0', max_steps=100000,
 
     cfg.alg.episode_steps = 24 * 30
     cfg.alg.log_interval = 1
-    cfg.alg.eval_interval = 20
+    cfg.alg.eval_interval = 10
+    cfg.alg.max_saved_models = max_saved_models
 
     cfg.alg.policy_lr = policy_lr
     cfg.alg.value_lr = value_lr
